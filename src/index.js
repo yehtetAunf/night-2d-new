@@ -1774,7 +1774,15 @@ async function loadLive(){
       formatUpdated(
         data.updated_at
       );
+// Final Result ပြနေတဲ့ ၂ မိနစ်အတွင်း ✓ ပြ
+var finalCheck =
+  document.getElementById("finalCheck");
 
+if (data.final_window === true) {
+  finalCheck.style.display = "inline";
+} else {
+  finalCheck.style.display = "none";
+}
     document
       .getElementById(
         "liveDate"

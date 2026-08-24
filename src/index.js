@@ -120,6 +120,37 @@ export default {
 
         return json(state);
       }
+      // ADMIN LIVE STATUS
+if (
+  path === "/api/admin/live-status" &&
+  request.method === "GET"
+) {
+  if (!isAdmin(request)) {
+    return json(
+      {
+        ok: false,
+        error: "Unauthorized"
+      },
+      401
+    );
+  }
+
+  const row = await env.DB.prepare(`
+    SELECT setting_value
+    FROM settings
+    WHERE setting_key = ?
+  `)
+    .bind(LIVE_CONTROL_KEY)
+    .first();
+
+  const enabled =
+    !row || row.setting_value === "1";
+
+  return json({
+    ok: true,
+    live_enabled: enabled
+  });
+}
       // =========================
       // ADMIN LIVE CONTROL
       // =========================

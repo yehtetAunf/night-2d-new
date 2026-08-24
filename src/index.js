@@ -775,10 +775,6 @@ async function getUserState(env) {
   const now =
     Date.now();
 
-  // -------------------------
-  // Admin preset results
-  // -------------------------
-
   const rows =
     await env.DB.prepare(`
       SELECT
@@ -789,13 +785,11 @@ async function getUserState(env) {
         set_value,
         market_value,
         updated_at
-
       FROM results
-
       WHERE result_date = ?
     `)
-      .bind(sessionDate)
-      .all();
+    .bind(sessionDate)
+    .all();
 
   const saved =
     rows.results || [];
@@ -803,22 +797,15 @@ async function getUserState(env) {
   const savedByRound = {};
 
   for (const row of saved) {
-    savedByRound[
-      row.round_time
-    ] = row;
+    savedByRound[row.round_time] = row;
   }
 
-  // -------------------------
-  // Live API
-  // -------------------------
-
-  let market = null;
+  let market;
 
   try {
     market =
       await getTwelveDataMarket(env);
   } catch (e) {
-
     market = {
       set_value: "--",
       market_value: "--",
@@ -827,13 +814,10 @@ async function getUserState(env) {
     };
   }
 
-  // -------------------------
-  // Round cards
-  // -------------------------
-
   const roundResults = {};
 
-  let latestFinal = null;
+  let activeFinal = null;
+  let activeFinalTime = 0;
 
   for (const round of ROUNDS) {
 
@@ -846,49 +830,42 @@ async function getUserState(env) {
     const preset =
       savedByRound[round];
 
-    // Round မရောက်သေး
     if (now < publishTime) {
-
-      roundResults[round] =
-        "--";
-
+      roundResults[round] = "--";
       continue;
     }
 
-    // Round ရောက်ပြီး
-    // Admin preset ရှိမှ Final ပြ
     if (preset) {
 
       roundResults[round] =
         preset.result;
 
+      const finalEndTime =
+        publishTime +
+        FINAL_SHOW_MS;
+
       if (
-        !latestFinal ||
-        publishTime >
-          roundPublishTime(
-            latestFinal.result_date,
-            latestFinal.round_time
-          )
+        now >= publishTime &&
+        now < finalEndTime
       ) {
-        latestFinal =
-          preset;
+
+        if (
+          !activeFinal ||
+          publishTime >
+            activeFinalTime
+        ) {
+          activeFinal =
+            preset;
+
+          activeFinalTime =
+            publishTime;
+        }
       }
 
     } else {
-
-      roundResults[round] =
-        "--";
+      roundResults[round] = "--";
     }
   }
-
-  // -------------------------
-  // MAIN DISPLAY
-  //
-  // Live market အမြဲကစား
-  // ဒါပေမယ့် လတ်တလော Round
-  // final ရောက်ချိန်မှာ Admin data
-  // ကို ဦးစားပေး
-  // -------------------------
 
   let mainResult =
     market.result || "--";
@@ -902,19 +879,25 @@ async function getUserState(env) {
   let updatedAt =
     market.datetime || null;
 
-  if (latestFinal) {
+  let finalWindow =
+    false;
+
+  if (activeFinal) {
 
     mainResult =
-      latestFinal.result || "--";
+      activeFinal.result || "--";
 
     displaySet =
-      latestFinal.set_value || "--";
+      activeFinal.set_value || "--";
 
     displayValue =
-      latestFinal.market_value || "--";
+      activeFinal.market_value || "--";
 
     updatedAt =
-      latestFinal.updated_at || null;
+      activeFinal.updated_at || null;
+
+    finalWindow =
+      true;
   }
 
   return {
@@ -924,9 +907,12 @@ async function getUserState(env) {
       sessionDate,
 
     mode:
-      latestFinal
+      finalWindow
         ? "FINAL"
         : "LIVE",
+
+    final_window:
+      finalWindow,
 
     main_result:
       mainResult,

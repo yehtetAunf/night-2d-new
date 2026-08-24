@@ -120,7 +120,48 @@ export default {
 
         return json(state);
       }
+      // =========================
+      // ADMIN LIVE CONTROL
+      // =========================
+      if (
+        path === "/api/admin/live-control" &&
+        request.method === "POST"
+      ) {
+        if (!isAdmin(request)) {
+          return json(
+            {
+              ok: false,
+              error: "Unauthorized"
+            },
+            401
+          );
+        }
 
+        const body = await request.json();
+
+        const enabled =
+          body.enabled === true;
+
+        await env.DB.prepare(`
+          INSERT INTO settings
+          (setting_key, setting_value)
+          VALUES (?, ?)
+
+          ON CONFLICT(setting_key)
+          DO UPDATE SET
+            setting_value = excluded.setting_value
+        `)
+        .bind(
+          LIVE_CONTROL_KEY,
+          enabled ? "1" : "0"
+        )
+        .run();
+
+        return json({
+          ok: true,
+          live_enabled: enabled
+        });
+          }
       // =========================
       // LIVE MARKET TEST API
       // =========================

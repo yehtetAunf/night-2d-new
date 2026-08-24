@@ -5,4 +5,4 @@ compatibility_date = "2026-08-24"
 [[d1_databases]]
 binding = "DB"
 database_name = "night-2d-db"
-database_id = "PUT_YOUR_D1_DATABASE_ID_HERE"
+database_id = "bf0b7891-66b1-4641-bfc4-9e059fd66779"

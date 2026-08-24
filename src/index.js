@@ -3203,7 +3203,143 @@ function escapeHtml(text){
 
 }
 
+// ======================================
+// LIVE CONTROL STATUS
+// ======================================
 
+async function loadLiveControlStatus(){
+
+  try{
+
+    var res =
+      await fetch(
+        "/api/admin/live-status?t=" +
+        Date.now(),
+        {
+          cache:"no-store"
+        }
+      );
+
+    var data =
+      await res.json();
+
+    var status =
+      document.getElementById(
+        "liveControlStatus"
+      );
+
+    var btn =
+      document.getElementById(
+        "liveControlBtn"
+      );
+
+    if(!data.ok){
+
+      status.textContent =
+        "Status Error";
+
+      return;
+    }
+
+    if(data.live_enabled){
+
+      status.textContent =
+        "LIVE ON";
+
+      status.style.color =
+        "#129849";
+
+      btn.textContent =
+        "LIVE OFF";
+
+      btn.style.background =
+        "#e5323a";
+
+    }else{
+
+      status.textContent =
+        "LIVE OFF";
+
+      status.style.color =
+        "#e5323a";
+
+      btn.textContent =
+        "LIVE ON";
+
+      btn.style.background =
+        "#129849";
+    }
+
+  }catch(e){
+
+    document
+      .getElementById(
+        "liveControlStatus"
+      )
+      .textContent =
+      "Status Error";
+  }
+}
+
+
+// ======================================
+// LIVE ON / OFF TOGGLE
+// ======================================
+
+async function toggleLiveControl(){
+
+  var status =
+    document.getElementById(
+      "liveControlStatus"
+    );
+
+  var currentlyOn =
+    status.textContent ===
+    "LIVE ON";
+
+  try{
+
+    var res =
+      await fetch(
+        "/api/admin/live-control",
+        {
+          method:"POST",
+
+          headers:{
+            "content-type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify({
+              enabled:
+                !currentlyOn
+            })
+        }
+      );
+
+    var data =
+      await res.json();
+
+    if(!data.ok){
+
+      alert(
+        data.error ||
+        "Live Control Error"
+      );
+
+      return;
+    }
+
+    await loadLiveControlStatus();
+
+  }catch(e){
+
+    alert(
+      "Live Control Error"
+    );
+  }
+}
 // ======================================
 // INITIAL
 // ======================================

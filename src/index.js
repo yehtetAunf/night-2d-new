@@ -3346,6 +3346,8 @@ async function toggleLiveControl(){
 
 async function startAdmin(){
 
+  await loadLiveControlStatus();
+
   await loadAdminList();
 
   await loadOldHistoryValues();

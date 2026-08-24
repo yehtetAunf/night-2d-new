@@ -657,21 +657,27 @@ async function getCoinbaseMarket() {
 
   const data = await response.json();
 
-  const setValue = String(
-    data.price || ""
-  ).trim();
+  // Keep the live Coinbase source, but display NIGHT 2D sized values:
+  // SET   = last 4 integer digits + 2 decimal digits  (e.g. 1234.55)
+  // VALUE = last 5 integer digits + 2 decimal digits  (e.g. 34567.89)
+  const formatNightNumber = (raw, integerDigits) => {
+    const text = String(raw || "").trim();
+    if (!text) return "";
 
-  let marketValue = String(
-    data.volume || ""
-  ).trim();
+    const parts = text.replace(/,/g, "").split(".");
+    const integerPart = (parts[0].replace(/\D/g, "") || "0")
+      .slice(-integerDigits)
+      .padStart(integerDigits, "0");
+    const decimalPart = ((parts[1] || "") + "00")
+      .replace(/\D/g, "")
+      .slice(0, 2)
+      .padEnd(2, "0");
 
-  // Remove only unnecessary trailing zeroes from VALUE,
-  // so the displayed last digit is also the 2D VALUE digit.
-  if (marketValue.includes(".")) {
-    marketValue = marketValue
-      .replace(/0+$/, "")
-      .replace(/\.$/, "");
-  }
+    return integerPart + "." + decimalPart;
+  };
+
+  const setValue = formatNightNumber(data.price, 4);
+  const marketValue = formatNightNumber(data.volume, 5);
 
   if (!setValue) {
     throw new Error(

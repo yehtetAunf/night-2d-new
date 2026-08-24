@@ -2442,11 +2442,11 @@ button{
     >
 
 
-    <div class="action-grid">
-      <button class="save" style="background:#16a34a" onclick="saveResult('preset')">🟢 ကြိုသတ်မှတ်</button>
-      <button class="save" style="background:#1976d2" onclick="saveResult('now')">🔵 ယခု ထုတ်မည်</button>
-      <button class="save" style="background:#dc2626" onclick="deletePreset()">🔴 ဖျက်မည်</button>
-    </div>
+    <button class="save" style="background:#149447" onclick="saveResult('preset')">🟢 ကြိုသတ်မှတ်</button>
+
+    <button class="save" style="background:#1976d2" onclick="saveResult('now')">🔵 ယခု ထုတ်မည်</button>
+
+    <button class="save" style="background:#d62828" onclick="deletePreset()">🔴 ဖျက်မည်</button>
 
   </div>
 
@@ -2717,7 +2717,7 @@ function notice(
 // SET / VALUE ကနေ ထပ်တွက်မယ်
 // ======================================
 
-async function saveResult(mode="preset"){
+async function saveResult(mode="now"){
 
   var setValue =
     document
@@ -2750,8 +2750,6 @@ async function saveResult(mode="preset"){
 
   var payload = {
 
-    action: mode,
-
     result_date:
       document
         .getElementById("date")
@@ -2766,7 +2764,10 @@ async function saveResult(mode="preset"){
       setValue,
 
     market_value:
-      marketValue
+      marketValue,
+
+    mode:
+      mode
   };
 
 
@@ -2831,18 +2832,11 @@ async function saveResult(mode="preset"){
 }
 
 
+// ======================================
 async function deletePreset(){
-  var payload={
-    result_date:document.getElementById("date").value,
-    round_time:document.getElementById("round").value
-  };
-  try{
-    await fetch("/api/admin/delete",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
-    await loadAdminList();
-  }catch(e){}
+  alert("ဖျက်ရန် Round ကိုရွေးပြီး Delete API ချိတ်ရန်လိုပါတယ်");
 }
 
-// ======================================
 // SAVE OLD HISTORY - 6 ROUNDS
 // ======================================
 

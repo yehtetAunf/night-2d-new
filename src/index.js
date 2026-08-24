@@ -8,6 +8,7 @@ const ROUNDS = [
 ];
 
 const COOKIE_NAME = "night2d_admin";
+const TWELVE_SYMBOL = "BTC/USD";
 
 export default {
   async fetch(request, env) {
@@ -17,21 +18,40 @@ export default {
     try {
 
       // =========================
+      // USER PAGE
+      // =========================
+      if (path === "/" && request.method === "GET") {
+        return html(userPage());
+      }
+
+      // =========================
+      // HISTORY PAGE
+      // =========================
+      if (path === "/history" && request.method === "GET") {
+        return html(historyPage());
+      }
+
+      // =========================
       // ADMIN PAGE
       // =========================
       if (path === "/admin" && request.method === "GET") {
         if (!isAdmin(request)) {
           return html(adminLoginPage());
         }
+
         return html(adminPage());
       }
 
       // =========================
       // ADMIN LOGIN
       // =========================
-      if (path === "/admin/login" && request.method === "POST") {
+      if (
+        path === "/admin/login" &&
+        request.method === "POST"
+      ) {
         const form = await request.formData();
-        const password = String(form.get("password") || "");
+        const password =
+          String(form.get("password") || "");
 
         if (!env.ADMIN_PASSWORD) {
           return html(
@@ -57,9 +77,11 @@ export default {
           status: 302,
           headers: {
             Location: "/admin",
+
             "Set-Cookie":
               COOKIE_NAME +
-              "=yes; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000"
+              "=yes; Path=/; HttpOnly; Secure;" +
+              " SameSite=Lax; Max-Age=2592000"
           }
         });
       }
@@ -72,52 +94,88 @@ export default {
           status: 302,
           headers: {
             Location: "/admin",
+
             "Set-Cookie":
               COOKIE_NAME +
-              "=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"
+              "=; Path=/; HttpOnly; Secure;" +
+              " SameSite=Lax; Max-Age=0"
           }
         });
       }
 
       // =========================
-      // USER LIVE API
+      // LIVE USER API
       // =========================
-      if (path === "/api/live" && request.method === "GET") {
-        return json(await getUserState(env));
+      if (
+        path === "/api/live" &&
+        request.method === "GET"
+      ) {
+        const state = await getUserState(env);
+
+        return json(state);
       }
 
       // =========================
-      // USER HISTORY
+      // LIVE MARKET TEST API
       // =========================
-      if (path === "/api/history" && request.method === "GET") {
+      if (
+        path === "/api/market" &&
+        request.method === "GET"
+      ) {
+        const market =
+          await getTwelveDataMarket(env);
+
+        return json({
+          ok: true,
+          ...market
+        });
+      }
+
+      // =========================
+      // HISTORY API
+      // =========================
+      if (
+        path === "/api/history" &&
+        request.method === "GET"
+      ) {
         const rows = await env.DB.prepare(`
           SELECT
+            id,
             result_date,
             round_time,
             result,
             set_value,
             market_value,
             updated_at
+
           FROM results
-          ORDER BY result_date DESC, id DESC
-          LIMIT 100
+
+          ORDER BY
+            result_date DESC,
+            id DESC
+
+          LIMIT 300
         `).all();
 
         const now = Date.now();
 
-        const visible = (rows.results || []).filter((row) => {
-          return roundPublishTime(
-            row.result_date,
-            row.round_time
-          ) <= now;
-        });
+        const visible =
+          (rows.results || []).filter(
+            function(row) {
+              return (
+                roundPublishTime(
+                  row.result_date,
+                  row.round_time
+                ) <= now
+              );
+            }
+          );
 
         return json(visible);
       }
 
       // =========================
-      // ADMIN RESULT LIST
-      // SET / VALUE မပြ
+      // ADMIN LIST
       // =========================
       if (
         path === "/api/admin/list" &&
@@ -125,7 +183,10 @@ export default {
       ) {
         if (!isAdmin(request)) {
           return json(
-            { ok: false, error: "Unauthorized" },
+            {
+              ok: false,
+              error: "Unauthorized"
+            },
             401
           );
         }
@@ -137,9 +198,14 @@ export default {
             round_time,
             result,
             updated_at
+
           FROM results
-          ORDER BY result_date DESC, id DESC
-          LIMIT 200
+
+          ORDER BY
+            result_date DESC,
+            id DESC
+
+          LIMIT 300
         `).all();
 
         return json({
@@ -149,8 +215,9 @@ export default {
       }
 
       // =========================
-      // ADMIN PRESET RESULT
-      // Result + SET + VALUE
+      // ADMIN SAVE FINAL
+      // SET + VALUE only
+      // 2D AUTO CALCULATE
       // =========================
       if (
         path === "/api/admin/save" &&
@@ -158,50 +225,84 @@ export default {
       ) {
         if (!isAdmin(request)) {
           return json(
-            { ok: false, error: "Unauthorized" },
+            {
+              ok: false,
+              error: "Unauthorized"
+            },
             401
           );
         }
 
         const body = await request.json();
 
-        const resultDate = cleanDate(body.result_date);
-        const roundTime = cleanRound(body.round_time);
-        const result = cleanResult(body.result);
-        const setValue = cleanNumber(body.set_value);
-        const marketValue = cleanNumber(body.market_value);
+        const resultDate =
+          cleanDate(body.result_date);
+
+        const roundTime =
+          cleanRound(body.round_time);
+
+        const setValue =
+          cleanNumber(body.set_value);
+
+        const marketValue =
+          cleanNumber(body.market_value);
 
         if (!resultDate) {
           return json(
-            { ok: false, error: "Date လိုအပ်ပါတယ်" },
+            {
+              ok: false,
+              error: "Date လိုအပ်ပါတယ်"
+            },
             400
           );
         }
 
         if (!roundTime) {
           return json(
-            { ok: false, error: "Round Time မမှန်ပါ" },
-            400
-          );
-        }
-
-        if (!result) {
-          return json(
-            { ok: false, error: "2D Result ၂လုံး ထည့်ပါ" },
+            {
+              ok: false,
+              error: "Round Time မမှန်ပါ"
+            },
             400
           );
         }
 
         if (!setValue) {
           return json(
-            { ok: false, error: "SET ထည့်ပါ" },
+            {
+              ok: false,
+              error: "SET ထည့်ပါ"
+            },
             400
           );
         }
 
         if (!marketValue) {
           return json(
-            { ok: false, error: "VALUE ထည့်ပါ" },
+            {
+              ok: false,
+              error: "VALUE ထည့်ပါ"
+            },
+            400
+          );
+        }
+
+        // =========================
+        // AUTO 2D
+        // =========================
+        const result =
+          calculate2D(
+            setValue,
+            marketValue
+          );
+
+        if (!result) {
+          return json(
+            {
+              ok: false,
+              error:
+                "SET / VALUE ကနေ 2D တွက်မရပါ"
+            },
             400
           );
         }
@@ -216,36 +317,66 @@ export default {
             market_value,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
 
-          ON CONFLICT(result_date, round_time)
+          VALUES
+          (?, ?, ?, ?, ?, datetime('now'))
+
+          ON CONFLICT(
+            result_date,
+            round_time
+          )
+
           DO UPDATE SET
-            result = excluded.result,
-            set_value = excluded.set_value,
-            market_value = excluded.market_value,
-            updated_at = datetime('now')
+
+            result =
+              excluded.result,
+
+            set_value =
+              excluded.set_value,
+
+            market_value =
+              excluded.market_value,
+
+            updated_at =
+              datetime('now')
         `)
-        .bind(
-          resultDate,
-          roundTime,
-          result,
-          setValue,
-          marketValue
-        )
-        .run();
+          .bind(
+            resultDate,
+            roundTime,
+            result,
+            setValue,
+            marketValue
+          )
+          .run();
 
         return json({
           ok: true,
-          message: "Result သတ်မှတ်ပြီးပါပြီ",
-          result_date: resultDate,
-          round_time: roundTime,
-          result
+
+          message:
+            "Result သတ်မှတ်ပြီးပါပြီ",
+
+          result_date:
+            resultDate,
+
+          round_time:
+            roundTime,
+
+          result:
+            result,
+
+          set_value:
+            setValue,
+
+          market_value:
+            marketValue
         });
       }
 
       // =========================
       // ADD OLD HISTORY
-      // Result only
+      // Single-round API
+      // UI မှာ 6 rounds ကို
+      // ဒီ API ကို တစ်ခုချင်းခေါ်မယ်
       // =========================
       if (
         path === "/api/admin/add-history" &&
@@ -253,34 +384,52 @@ export default {
       ) {
         if (!isAdmin(request)) {
           return json(
-            { ok: false, error: "Unauthorized" },
+            {
+              ok: false,
+              error: "Unauthorized"
+            },
             401
           );
         }
 
         const body = await request.json();
 
-        const resultDate = cleanDate(body.result_date);
-        const roundTime = cleanRound(body.round_time);
-        const result = cleanResult(body.result);
+        const resultDate =
+          cleanDate(body.result_date);
+
+        const roundTime =
+          cleanRound(body.round_time);
+
+        const result =
+          cleanResult(body.result);
 
         if (!resultDate) {
           return json(
-            { ok: false, error: "History Date လိုပါတယ်" },
+            {
+              ok: false,
+              error: "History Date လိုပါတယ်"
+            },
             400
           );
         }
 
         if (!roundTime) {
           return json(
-            { ok: false, error: "Round Time မမှန်ပါ" },
+            {
+              ok: false,
+              error: "Round Time မမှန်ပါ"
+            },
             400
           );
         }
 
         if (!result) {
           return json(
-            { ok: false, error: "2D Result ၂လုံး ထည့်ပါ" },
+            {
+              ok: false,
+              error:
+                "2D Result ၂လုံး ထည့်ပါ"
+            },
             400
           );
         }
@@ -295,23 +444,34 @@ export default {
             market_value,
             updated_at
           )
-          VALUES (?, ?, ?, NULL, NULL, datetime('now'))
 
-          ON CONFLICT(result_date, round_time)
+          VALUES
+          (?, ?, ?, NULL, NULL, datetime('now'))
+
+          ON CONFLICT(
+            result_date,
+            round_time
+          )
+
           DO UPDATE SET
-            result = excluded.result,
-            updated_at = datetime('now')
+
+            result =
+              excluded.result,
+
+            updated_at =
+              datetime('now')
         `)
-        .bind(
-          resultDate,
-          roundTime,
-          result
-        )
-        .run();
+          .bind(
+            resultDate,
+            roundTime,
+            result
+          )
+          .run();
 
         return json({
           ok: true,
-          message: "Old History ထည့်ပြီးပါပြီ"
+          message:
+            "Old History ထည့်ပြီးပါပြီ"
         });
       }
 
@@ -324,7 +484,10 @@ export default {
       ) {
         if (!isAdmin(request)) {
           return json(
-            { ok: false, error: "Unauthorized" },
+            {
+              ok: false,
+              error: "Unauthorized"
+            },
             401
           );
         }
@@ -334,7 +497,10 @@ export default {
 
         if (!Number.isInteger(id)) {
           return json(
-            { ok: false, error: "Invalid ID" },
+            {
+              ok: false,
+              error: "Invalid ID"
+            },
             400
           );
         }
@@ -342,8 +508,8 @@ export default {
         await env.DB.prepare(
           "DELETE FROM results WHERE id = ?"
         )
-        .bind(id)
-        .run();
+          .bind(id)
+          .run();
 
         return json({
           ok: true,
@@ -351,24 +517,22 @@ export default {
         });
       }
 
-      if (path === "/history") {
-        return html(historyPage());
-      }
-
-      if (path === "/") {
-        return html(userPage());
-      }
-
-      return new Response("Not Found", {
-        status: 404
-      });
+      return new Response(
+        "Not Found",
+        {
+          status: 404
+        }
+      );
 
     } catch (error) {
+
       return json(
         {
           ok: false,
+
           error:
-            error && error.message
+            error &&
+            error.message
               ? error.message
               : String(error)
         },
@@ -380,90 +544,375 @@ export default {
 
 
 // ==================================================
-// USER LIVE STATE
+// TWELVE DATA LIVE MARKET
+// ==================================================
+
+async function getTwelveDataMarket(env) {
+
+  if (!env.TWELVE_DATA_API_KEY) {
+    throw new Error(
+      "TWELVE_DATA_API_KEY မရှိပါ"
+    );
+  }
+
+  const endpoint =
+    "https://api.twelvedata.com/time_series" +
+    "?symbol=" +
+    encodeURIComponent(TWELVE_SYMBOL) +
+    "&interval=1min" +
+    "&outputsize=1" +
+    "&apikey=" +
+    encodeURIComponent(
+      env.TWELVE_DATA_API_KEY
+    );
+
+  const response =
+    await fetch(endpoint, {
+      headers: {
+        Accept: "application/json"
+      }
+    });
+
+  if (!response.ok) {
+    throw new Error(
+      "Twelve Data HTTP " +
+      response.status
+    );
+  }
+
+  const data =
+    await response.json();
+
+  if (data.status === "error") {
+    throw new Error(
+      data.message ||
+      "Twelve Data API Error"
+    );
+  }
+
+  if (
+    !Array.isArray(data.values) ||
+    data.values.length === 0
+  ) {
+    throw new Error(
+      "Twelve Data Live Data မရပါ"
+    );
+  }
+
+  const latest =
+    data.values[0];
+
+  // SET = BTC/USD close price
+  const setValue =
+    String(
+      latest.close || ""
+    ).trim();
+
+  // VALUE = 1 minute volume
+  const marketValue =
+    String(
+      latest.volume || ""
+    ).trim();
+
+  if (!setValue) {
+    throw new Error(
+      "Live SET value မရပါ"
+    );
+  }
+
+  if (!marketValue) {
+    throw new Error(
+      "Live VALUE မရပါ"
+    );
+  }
+
+  const result =
+    calculate2D(
+      setValue,
+      marketValue
+    );
+
+  return {
+    symbol:
+      TWELVE_SYMBOL,
+
+    set_value:
+      setValue,
+
+    market_value:
+      marketValue,
+
+    result:
+      result || "--",
+
+    datetime:
+      latest.datetime || null
+  };
+}
+
+
+// ==================================================
+// AUTO 2D CALCULATION
+//
+// SET   → ဒသမနောက်ဆုံးဂဏန်း
+// VALUE → နောက်ဆုံးဂဏန်း
+//
+// 1298.45 + 56789.12
+// SET digit   = 5
+// VALUE digit = 2
+// RESULT      = 52
+// ==================================================
+
+function calculate2D(
+  setValue,
+  marketValue
+) {
+
+  const setText =
+    String(setValue || "")
+      .replace(/,/g, "")
+      .trim();
+
+  const valueText =
+    String(marketValue || "")
+      .replace(/,/g, "")
+      .trim();
+
+  // -------------------------
+  // SET decimal last digit
+  // -------------------------
+
+  if (!setText.includes(".")) {
+    return "";
+  }
+
+  const decimalPart =
+    setText
+      .split(".")
+      .pop()
+      .replace(/\D/g, "");
+
+  if (!decimalPart) {
+    return "";
+  }
+
+  const setDigit =
+    decimalPart.slice(-1);
+
+  // -------------------------
+  // VALUE last digit
+  // -------------------------
+
+  const valueDigits =
+    valueText.replace(
+      /\D/g,
+      ""
+    );
+
+  if (!valueDigits) {
+    return "";
+  }
+
+  const valueDigit =
+    valueDigits.slice(-1);
+
+  return (
+    setDigit +
+    valueDigit
+  );
+}
+
+
+// ==================================================
+// USER STATE
+// Live before round
+// Admin final after round
 // ==================================================
 
 async function getUserState(env) {
 
-  const sessionDate = getCurrentSessionDate();
+  const sessionDate =
+    getCurrentSessionDate();
 
-  const rows = await env.DB.prepare(`
-    SELECT
-      id,
-      result_date,
-      round_time,
-      result,
-      set_value,
-      market_value,
-      updated_at
-    FROM results
-    WHERE result_date = ?
-  `)
-  .bind(sessionDate)
-  .all();
+  const now =
+    Date.now();
 
-  const data = rows.results || [];
-  const now = Date.now();
+  // -------------------------
+  // Admin preset results
+  // -------------------------
+
+  const rows =
+    await env.DB.prepare(`
+      SELECT
+        id,
+        result_date,
+        round_time,
+        result,
+        set_value,
+        market_value,
+        updated_at
+
+      FROM results
+
+      WHERE result_date = ?
+    `)
+      .bind(sessionDate)
+      .all();
+
+  const saved =
+    rows.results || [];
+
+  const savedByRound = {};
+
+  for (const row of saved) {
+    savedByRound[
+      row.round_time
+    ] = row;
+  }
+
+  // -------------------------
+  // Live API
+  // -------------------------
+
+  let market = null;
+
+  try {
+    market =
+      await getTwelveDataMarket(env);
+  } catch (e) {
+
+    market = {
+      set_value: "--",
+      market_value: "--",
+      result: "--",
+      datetime: null
+    };
+  }
+
+  // -------------------------
+  // Round cards
+  // -------------------------
 
   const roundResults = {};
 
-  let latest = null;
+  let latestFinal = null;
 
   for (const round of ROUNDS) {
-    roundResults[round] = "--";
-  }
 
-  for (const row of data) {
+    const publishTime =
+      roundPublishTime(
+        sessionDate,
+        round
+      );
 
-    const publishTime = roundPublishTime(
-      row.result_date,
-      row.round_time
-    );
+    const preset =
+      savedByRound[round];
 
-    // User မှာ အချိန်မရောက်ခင် --
-    if (now >= publishTime) {
+    // Round မရောက်သေး
+    if (now < publishTime) {
 
-      roundResults[row.round_time] = row.result;
+      roundResults[round] =
+        "--";
+
+      continue;
+    }
+
+    // Round ရောက်ပြီး
+    // Admin preset ရှိမှ Final ပြ
+    if (preset) {
+
+      roundResults[round] =
+        preset.result;
 
       if (
-        !latest ||
+        !latestFinal ||
         publishTime >
           roundPublishTime(
-            latest.result_date,
-            latest.round_time
+            latestFinal.result_date,
+            latestFinal.round_time
           )
       ) {
-        latest = row;
+        latestFinal =
+          preset;
       }
+
+    } else {
+
+      roundResults[round] =
+        "--";
     }
+  }
+
+  // -------------------------
+  // MAIN DISPLAY
+  //
+  // Live market အမြဲကစား
+  // ဒါပေမယ့် လတ်တလော Round
+  // final ရောက်ချိန်မှာ Admin data
+  // ကို ဦးစားပေး
+  // -------------------------
+
+  let mainResult =
+    market.result || "--";
+
+  let displaySet =
+    market.set_value || "--";
+
+  let displayValue =
+    market.market_value || "--";
+
+  let updatedAt =
+    market.datetime || null;
+
+  if (latestFinal) {
+
+    mainResult =
+      latestFinal.result || "--";
+
+    displaySet =
+      latestFinal.set_value || "--";
+
+    displayValue =
+      latestFinal.market_value || "--";
+
+    updatedAt =
+      latestFinal.updated_at || null;
   }
 
   return {
     ok: true,
 
-    session_date: sessionDate,
+    session_date:
+      sessionDate,
+
+    mode:
+      latestFinal
+        ? "FINAL"
+        : "LIVE",
 
     main_result:
-      latest
-        ? latest.result
-        : "--",
+      mainResult,
 
     set_value:
-      latest && latest.set_value
-        ? latest.set_value
-        : "--",
+      displaySet,
 
     market_value:
-      latest && latest.market_value
-        ? latest.market_value
-        : "--",
+      displayValue,
 
     updated_at:
-      latest && latest.updated_at
-        ? latest.updated_at
-        : null,
+      updatedAt,
 
-    rounds: roundResults
+    live_result:
+      market.result || "--",
+
+    live_set:
+      market.set_value || "--",
+
+    live_value:
+      market.market_value || "--",
+
+    rounds:
+      roundResults
   };
 }
 
@@ -473,10 +922,9 @@ async function getUserState(env) {
 // ==================================================
 
 function yangonNow() {
-  const now = new Date();
 
   return new Date(
-    now.getTime() +
+    Date.now() +
     6.5 * 60 * 60 * 1000
   );
 }
@@ -484,11 +932,14 @@ function yangonNow() {
 
 function getCurrentSessionDate() {
 
-  const d = yangonNow();
+  const d =
+    yangonNow();
 
-  // 12:00 AM / 12:30 AM
-  // မနေ့ည session အဖြစ်ယူ
-  if (d.getUTCHours() === 0) {
+  // 12:00 AM - 12:59 AM
+  // မနေ့ည session ထဲထား
+  if (
+    d.getUTCHours() === 0
+  ) {
     d.setUTCDate(
       d.getUTCDate() - 1
     );
@@ -497,20 +948,33 @@ function getCurrentSessionDate() {
   return (
     d.getUTCFullYear() +
     "-" +
-    pad(d.getUTCMonth() + 1) +
+    pad(
+      d.getUTCMonth() + 1
+    ) +
     "-" +
-    pad(d.getUTCDate())
+    pad(
+      d.getUTCDate()
+    )
   );
 }
 
 
-function roundPublishTime(date, round) {
+function roundPublishTime(
+  date,
+  round
+) {
 
-  const parts = date.split("-");
+  const parts =
+    String(date).split("-");
 
-  const year = Number(parts[0]);
-  const month = Number(parts[1]);
-  const day = Number(parts[2]);
+  const year =
+    Number(parts[0]);
+
+  const month =
+    Number(parts[1]);
+
+  const day =
+    Number(parts[2]);
 
   let hour = 22;
   let minute = 0;
@@ -551,17 +1015,23 @@ function roundPublishTime(date, round) {
       break;
   }
 
-  let utc = Date.UTC(
-    year,
-    month - 1,
-    day,
-    hour - 6,
-    minute - 30,
-    0
-  );
+  // Yangon UTC+6:30 → UTC
+  let utc =
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      hour - 6,
+      minute - 30,
+      0
+    );
 
   if (nextDay) {
-    utc += 24 * 60 * 60 * 1000;
+    utc +=
+      24 *
+      60 *
+      60 *
+      1000;
   }
 
   return utc;
@@ -569,15 +1039,17 @@ function roundPublishTime(date, round) {
 
 
 // ==================================================
-// INPUT CLEAN
+// CLEAN INPUT
 // ==================================================
 
 function cleanDate(value) {
 
-  value = String(value || "");
+  value =
+    String(value || "");
 
   if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(value)
+    !/^\d{4}-\d{2}-\d{2}$/
+      .test(value)
   ) {
     return "";
   }
@@ -588,7 +1060,8 @@ function cleanDate(value) {
 
 function cleanRound(value) {
 
-  value = String(value || "");
+  value =
+    String(value || "");
 
   return ROUNDS.includes(value)
     ? value
@@ -598,23 +1071,29 @@ function cleanRound(value) {
 
 function cleanResult(value) {
 
-  value = String(value || "")
-    .replace(/\D/g, "")
-    .slice(0, 2);
+  value =
+    String(value || "")
+      .replace(/\D/g, "")
+      .slice(0, 2);
 
-  return value.length === 2
-    ? value
-    : "";
+  return (
+    value.length === 2
+      ? value
+      : ""
+  );
 }
 
 
 function cleanNumber(value) {
 
   value =
-    String(value || "").trim();
+    String(value || "")
+      .replace(/,/g, "")
+      .trim();
 
   if (
-    !/^-?\d+(\.\d+)?$/.test(value)
+    !/^-?\d+(\.\d+)?$/
+      .test(value)
   ) {
     return "";
   }
@@ -624,17 +1103,21 @@ function cleanNumber(value) {
 
 
 // ==================================================
-// ADMIN COOKIE
+// ADMIN AUTH
 // ==================================================
 
 function isAdmin(request) {
 
   const cookie =
-    request.headers.get("Cookie") || "";
+    request.headers.get(
+      "Cookie"
+    ) || "";
 
   return cookie
     .split(";")
-    .map(x => x.trim())
+    .map(function(x) {
+      return x.trim();
+    })
     .includes(
       COOKIE_NAME + "=yes"
     );
@@ -642,32 +1125,45 @@ function isAdmin(request) {
 
 
 // ==================================================
-// RESPONSE
+// RESPONSE HELPERS
 // ==================================================
 
-function html(body, status = 200) {
+function html(
+  body,
+  status = 200
+) {
 
-  return new Response(body, {
-    status,
-    headers: {
-      "content-type":
-        "text/html;charset=UTF-8",
-      "cache-control":
-        "no-store, no-cache, must-revalidate"
+  return new Response(
+    body,
+    {
+      status: status,
+
+      headers: {
+        "content-type":
+          "text/html;charset=UTF-8",
+
+        "cache-control":
+          "no-store, no-cache, must-revalidate"
+      }
     }
-  });
+  );
 }
 
 
-function json(data, status = 200) {
+function json(
+  data,
+  status = 200
+) {
 
   return new Response(
     JSON.stringify(data),
     {
-      status,
+      status: status,
+
       headers: {
         "content-type":
           "application/json;charset=UTF-8",
+
         "cache-control":
           "no-store, no-cache, must-revalidate"
       }
@@ -677,27 +1173,20 @@ function json(data, status = 200) {
 
 
 function pad(n) {
-  return String(n).padStart(2, "0");
-}
-
-
+  return String(n)
+    .padStart(2, "0");
+          }
 // ==================================================
 // USER PAGE
 // ==================================================
 
 function userPage() {
-
-return `
+  return `
 <!DOCTYPE html>
-
 <html>
-
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-name="viewport"
+<meta name="viewport"
 content="
 width=device-width,
 initial-scale=1,
@@ -708,555 +1197,428 @@ viewport-fit=cover
 
 <title>NIGHT 2D</title>
 
-
 <style>
 
 *{
-box-sizing:border-box;
--webkit-tap-highlight-color:transparent;
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
 }
 
 html,
 body{
-margin:0;
-padding:0;
-width:100%;
-min-height:100%;
+  margin:0;
+  padding:0;
+  width:100%;
+  min-height:100%;
 }
 
 body{
-background:
-radial-gradient(
-circle at 50% 18%,
-#082036 0%,
-#031321 40%,
-#010912 75%,
-#01070d 100%
-);
-color:#fff;
-font-family:
-Arial,
-Helvetica,
-sans-serif;
-overflow-x:hidden;
+  background:
+  radial-gradient(
+    circle at 50% 18%,
+    #082036 0%,
+    #031321 40%,
+    #010912 75%,
+    #01070d 100%
+  );
+  color:#fff;
+  font-family:Arial,Helvetica,sans-serif;
+  overflow-x:hidden;
 }
 
 .app{
-width:100%;
-max-width:720px;
-margin:0 auto;
-padding:
-18px
-18px
-22px;
+  width:100%;
+  max-width:720px;
+  margin:0 auto;
+  padding:18px 18px 22px;
 }
 
-
-/* HEADER */
-
 .header{
-display:flex;
-align-items:center;
-justify-content:space-between;
-gap:7px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:7px;
 }
 
 .brand{
-display:flex;
-align-items:center;
-gap:7px;
-font-size:25px;
-font-weight:900;
-font-style:italic;
-white-space:nowrap;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  font-size:25px;
+  font-weight:900;
+  font-style:italic;
+  white-space:nowrap;
 }
 
 .menu{
-font-size:28px;
-font-style:normal;
-line-height:1;
+  font-size:28px;
+  font-style:normal;
+  line-height:1;
 }
 
 .moon{
-font-size:35px;
-line-height:1;
+  font-size:35px;
+  line-height:1;
 }
 
 .blue{
-color:#078cff;
+  color:#078cff;
 }
 
 .live{
-border:2px solid #087dec;
-border-radius:28px;
-padding:9px 13px;
-font-size:12px;
-font-weight:900;
-white-space:nowrap;
+  border:2px solid #087dec;
+  border-radius:28px;
+  padding:9px 13px;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
 }
 
 .live-dot{
-color:#078cff;
+  color:#078cff;
 }
-
-
-/* MAIN RESULT */
 
 .main-result{
-font-size:116px;
-font-weight:900;
-line-height:.9;
-text-align:center;
-letter-spacing:-5px;
-margin-top:28px;
-height:110px;
-display:flex;
-align-items:center;
-justify-content:center;
+  font-size:116px;
+  font-weight:900;
+  line-height:.9;
+  text-align:center;
+  letter-spacing:-5px;
+  margin-top:28px;
+  height:110px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
-
-
-/* UPDATED */
 
 .updated{
-text-align:center;
-font-size:14px;
-font-weight:700;
-margin:
-11px
-0
-15px;
-white-space:nowrap;
+  text-align:center;
+  font-size:14px;
+  font-weight:700;
+  margin:11px 0 15px;
+  white-space:nowrap;
 }
 
-
-/* SET VALUE */
+.live-date{
+  text-align:center;
+  font-size:13px;
+  color:#7f94a8;
+  margin-top:-6px;
+  margin-bottom:12px;
+}
 
 .info{
-display:grid;
-grid-template-columns:
-1fr 1fr;
-gap:10px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
 }
 
 .info-card{
-border:
-2px solid
-#163044;
-border-radius:17px;
-padding:
-13px
-7px;
-text-align:center;
-background:
-rgba(
-3,
-14,
-25,
-.78
-);
-min-height:87px;
-display:flex;
-flex-direction:column;
-justify-content:center;
+  border:2px solid #163044;
+  border-radius:17px;
+  padding:13px 7px;
+  text-align:center;
+  background:rgba(3,14,25,.78);
+  min-height:87px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
 }
 
 .info-label{
-font-size:18px;
-font-weight:900;
-margin-bottom:6px;
+  font-size:18px;
+  font-weight:900;
+  margin-bottom:6px;
 }
 
 .set-color{
-color:#078cff;
+  color:#078cff;
 }
 
 .value-color{
-color:#00e8a1;
+  color:#00e8a1;
 }
 
 .info-value{
-font-size:28px;
-line-height:1;
-font-weight:900;
+  font-size:28px;
+  line-height:1;
+  font-weight:900;
 }
 
-
-/* 6 ROUNDS */
-
 .rounds{
-display:grid;
-grid-template-columns:
-1fr 1fr;
-gap:
-9px
-10px;
-margin-top:14px;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px 10px;
+  margin-top:14px;
 }
 
 .round{
-border:
-2px solid
-#163044;
-border-radius:17px;
-
-height:101px;
-
-background:
-rgba(
-3,
-14,
-25,
-.78
-);
-
-display:flex;
-flex-direction:column;
-align-items:center;
-justify-content:center;
+  border:2px solid #163044;
+  border-radius:17px;
+  height:101px;
+  background:rgba(3,14,25,.78);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
 }
 
 .round-title{
-font-size:15px;
-font-weight:900;
-margin-bottom:9px;
-white-space:nowrap;
+  font-size:15px;
+  font-weight:900;
+  margin-bottom:9px;
+  white-space:nowrap;
 }
 
 .round-title span{
-color:#078cff;
-font-size:20px;
-margin-right:4px;
+  color:#078cff;
+  font-size:20px;
+  margin-right:4px;
 }
 
 .round-result{
-font-size:30px;
-font-weight:900;
-line-height:1;
+  font-size:30px;
+  font-weight:900;
+  line-height:1;
 }
 
 .empty{
-color:#8a98a5;
+  color:#8a98a5;
 }
 
-
-/* HISTORY */
+.final{
+  color:#16a0ff;
+}
 
 .history-btn{
-display:flex;
-align-items:center;
-justify-content:center;
-
-width:100%;
-
-margin-top:13px;
-
-background:
-linear-gradient(
-135deg,
-#1284f8,
-#0967d8
-);
-
-border-radius:16px;
-
-color:#fff;
-
-padding:14px 10px;
-
-font-size:19px;
-font-weight:900;
-text-align:center;
-text-decoration:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:100%;
+  margin-top:13px;
+  background:linear-gradient(135deg,#1284f8,#0967d8);
+  border-radius:16px;
+  color:#fff;
+  padding:14px 10px;
+  font-size:19px;
+  font-weight:900;
+  text-align:center;
+  text-decoration:none;
 }
-
-
-/* VERY SMALL PHONE */
 
 @media(max-width:380px){
 
-.app{
-padding:
-12px
-11px
-15px;
-}
+  .app{
+    padding:12px 11px 15px;
+  }
 
-.brand{
-font-size:21px;
-}
+  .brand{
+    font-size:21px;
+  }
 
-.menu{
-font-size:24px;
-}
+  .menu{
+    font-size:24px;
+  }
 
-.moon{
-font-size:29px;
-}
+  .moon{
+    font-size:29px;
+  }
 
-.live{
-font-size:10px;
-padding:
-7px
-9px;
-}
+  .live{
+    font-size:10px;
+    padding:7px 9px;
+  }
 
-.main-result{
-font-size:100px;
-height:96px;
-margin-top:19px;
-}
+  .main-result{
+    font-size:100px;
+    height:96px;
+    margin-top:19px;
+  }
 
-.updated{
-font-size:12px;
-margin:
-8px
-0
-11px;
-}
+  .updated{
+    font-size:12px;
+    margin:8px 0 11px;
+  }
 
-.info-card{
-min-height:76px;
-padding:9px 5px;
-}
+  .live-date{
+    font-size:11px;
+    margin-bottom:9px;
+  }
 
-.info-label{
-font-size:16px;
-margin-bottom:5px;
-}
+  .info-card{
+    min-height:76px;
+    padding:9px 5px;
+  }
 
-.info-value{
-font-size:24px;
-}
+  .info-label{
+    font-size:16px;
+    margin-bottom:5px;
+  }
 
-.rounds{
-margin-top:10px;
-gap:7px;
-}
+  .info-value{
+    font-size:24px;
+  }
 
-.round{
-height:90px;
-}
+  .rounds{
+    margin-top:10px;
+    gap:7px;
+  }
 
-.round-title{
-font-size:13px;
-margin-bottom:7px;
-}
+  .round{
+    height:90px;
+  }
 
-.round-title span{
-font-size:18px;
-}
+  .round-title{
+    font-size:13px;
+    margin-bottom:7px;
+  }
 
-.round-result{
-font-size:27px;
-}
+  .round-title span{
+    font-size:18px;
+  }
 
-.history-btn{
-margin-top:10px;
-padding:12px;
-font-size:17px;
-}
+  .round-result{
+    font-size:27px;
+  }
+
+  .history-btn{
+    margin-top:10px;
+    padding:12px;
+    font-size:17px;
+  }
 
 }
 
+@media(min-width:431px){
 
-/* TALL PHONE */
+  .app{
+    padding:22px 20px 30px;
+  }
 
-@media(
-min-width:431px
-){
+  .main-result{
+    font-size:135px;
+    height:130px;
+    margin-top:38px;
+  }
 
-.app{
-padding:
-22px
-20px
-30px;
-}
+  .info-card{
+    min-height:105px;
+  }
 
-.main-result{
-font-size:135px;
-height:130px;
-margin-top:38px;
-}
+  .round{
+    height:125px;
+  }
 
-.info-card{
-min-height:105px;
-}
+  .round-title{
+    font-size:18px;
+  }
 
-.round{
-height:125px;
-}
-
-.round-title{
-font-size:18px;
-}
-
-.round-result{
-font-size:36px;
-}
+  .round-result{
+    font-size:36px;
+  }
 
 }
 
 </style>
-
 </head>
-
 
 <body>
 
 <div class="app">
 
+  <div class="header">
 
-<div class="header">
+    <div class="brand">
+      <span class="menu">☰</span>
+      <span class="moon">☾</span>
+      <span>
+        NIGHT
+        <span class="blue">2D</span>
+      </span>
+    </div>
 
-<div class="brand">
+    <div class="live">
+      <span class="live-dot">●</span>
+      2D LIVE NOW
+    </div>
 
-<span class="menu">
-☰
-</span>
+  </div>
 
-<span class="moon">
-☾
-</span>
+  <div
+    id="mainResult"
+    class="main-result">
+    --
+  </div>
 
-<span>
-NIGHT
-<span class="blue">
-2D
-</span>
-</span>
+  <div class="updated">
+    Updated
+    <span id="updatedText">
+      --/--/---- | --:--:--
+    </span>
+  </div>
 
-</div>
+  <div
+    id="liveDate"
+    class="live-date">
+    🌙 --/--/----
+  </div>
 
+  <div class="info">
 
-<div class="live">
+    <div class="info-card">
+      <div class="info-label set-color">
+        SET
+      </div>
 
-<span class="live-dot">
-●
-</span>
+      <div
+        id="setValue"
+        class="info-value">
+        --
+      </div>
+    </div>
 
-2D LIVE NOW
+    <div class="info-card">
+      <div class="info-label value-color">
+        VALUE
+      </div>
 
-</div>
+      <div
+        id="marketValue"
+        class="info-value">
+        --
+      </div>
+    </div>
 
-</div>
+  </div>
 
+  <div class="rounds">
 
+    ${ROUNDS.map(round => `
+      <div class="round">
 
-<div
-id="mainResult"
-class="main-result">
---
-</div>
+        <div class="round-title">
+          <span>☾</span>
+          ${round}
+        </div>
 
+        <div
+          id="r_${round.replace(/[^0-9A-Z]/gi,"_")}"
+          class="round-result empty">
+          --
+        </div>
 
+      </div>
+    `).join("")}
 
-<div class="updated">
+  </div>
 
-Updated
-
-<span id="updatedText">
---/--/---- | --:--:--
-</span>
-
-</div>
-
-
-
-<div class="info">
-
-
-<div class="info-card">
-
-<div
-class="
-info-label
-set-color
-">
-SET
-</div>
-
-<div
-id="setValue"
-class="info-value">
---
-</div>
-
-</div>
-
-
-
-<div class="info-card">
-
-<div
-class="
-info-label
-value-color
-">
-VALUE
-</div>
-
-<div
-id="marketValue"
-class="info-value">
---
-</div>
+  <a
+    class="history-btn"
+    href="/history">
+    ◷ &nbsp; 2D HISTORY
+  </a>
 
 </div>
-
-
-</div>
-
-
-
-<div class="rounds">
-
-
-${ROUNDS.map(round => `
-
-<div class="round">
-
-<div class="round-title">
-
-<span>
-☾
-</span>
-
-${round}
-
-</div>
-
-<div
-id="r_${round.replace(/[^0-9A-Z]/gi,"_")}"
-class="
-round-result
-empty
-">
---
-</div>
-
-</div>
-
-`).join("")}
-
-
-</div>
-
-
-
-<a
-class="history-btn"
-href="/history">
-
-◷ &nbsp;
-2D HISTORY
-
-</a>
-
-
-</div>
-
-
 
 <script>
 
@@ -1266,185 +1628,180 @@ ${JSON.stringify(ROUNDS)};
 
 function roundId(round){
 
-return (
-"r_" +
-round.replace(
-/[^0-9A-Z]/gi,
-"_"
-)
-);
+  return (
+    "r_" +
+    round.replace(
+      /[^0-9A-Z]/gi,
+      "_"
+    )
+  );
 
 }
 
 
 function formatUpdated(value){
 
-if(!value){
+  if(!value){
+    return "--/--/---- | --:--:--";
+  }
 
-return (
-"--/--/---- | " +
-"--:--:--"
-);
+  var normalized = value;
 
+  if(
+    typeof value === "string" &&
+    value.indexOf("T") === -1
+  ){
+    normalized =
+      value.replace(" ","T") + "Z";
+  }
+
+  var d =
+    new Date(normalized);
+
+  if(
+    isNaN(d.getTime())
+  ){
+    return String(value);
+  }
+
+  return d
+    .toLocaleString(
+      "en-GB",
+      {
+        timeZone:"Asia/Yangon",
+        day:"2-digit",
+        month:"2-digit",
+        year:"numeric",
+        hour:"2-digit",
+        minute:"2-digit",
+        second:"2-digit",
+        hour12:true
+      }
+    )
+    .replace(",","");
 }
 
 
-var d =
-new Date(
+function formatDate(){
 
-value.indexOf("Z") > -1
+  var now =
+    new Date();
 
-? value
-
-: value.replace(
-" ",
-"T"
-) + "Z"
-
-);
-
-
-if(
-isNaN(
-d.getTime()
-)
-){
-
-return value;
+  return new Intl.DateTimeFormat(
+    "en-GB",
+    {
+      timeZone:"Asia/Yangon",
+      day:"2-digit",
+      month:"2-digit",
+      year:"numeric"
+    }
+  ).format(now);
 
 }
-
-
-return d
-.toLocaleString(
-"en-GB",
-{
-timeZone:
-"Asia/Yangon",
-
-day:"2-digit",
-month:"2-digit",
-year:"numeric",
-
-hour:"2-digit",
-minute:"2-digit",
-second:"2-digit",
-
-hour12:true
-}
-)
-.replace(
-",",
-""
-);
-
-}
-
 
 
 async function loadLive(){
 
-try{
+  try{
 
-var res =
-await fetch(
+    var res =
+      await fetch(
+        "/api/live?t=" +
+        Date.now(),
+        {
+          cache:"no-store"
+        }
+      );
 
-"/api/live?t=" +
-Date.now(),
+    var data =
+      await res.json();
 
-{
-cache:"no-store"
-}
+    if(!data.ok){
+      return;
+    }
 
-);
+    document
+      .getElementById(
+        "mainResult"
+      )
+      .textContent =
+      data.main_result || "--";
 
+    document
+      .getElementById(
+        "setValue"
+      )
+      .textContent =
+      data.set_value || "--";
 
-var data =
-await res.json();
+    document
+      .getElementById(
+        "marketValue"
+      )
+      .textContent =
+      data.market_value || "--";
 
+    document
+      .getElementById(
+        "updatedText"
+      )
+      .textContent =
+      formatUpdated(
+        data.updated_at
+      );
 
-document
-.getElementById(
-"mainResult"
-)
-.textContent =
-data.main_result || "--";
+    document
+      .getElementById(
+        "liveDate"
+      )
+      .textContent =
+      "🌙 " + formatDate();
 
+    ROUNDS.forEach(
+      function(round){
 
-document
-.getElementById(
-"setValue"
-)
-.textContent =
-data.set_value || "--";
+        var el =
+          document.getElementById(
+            roundId(round)
+          );
 
+        var value =
+          data.rounds &&
+          data.rounds[round]
+            ? data.rounds[round]
+            : "--";
 
-document
-.getElementById(
-"marketValue"
-)
-.textContent =
-data.market_value || "--";
+        el.textContent =
+          value;
 
+        el.classList.remove(
+          "empty",
+          "final"
+        );
 
-document
-.getElementById(
-"updatedText"
-)
-.textContent =
-formatUpdated(
-data.updated_at
-);
+        if(
+          value === "--"
+        ){
+          el.classList.add(
+            "empty"
+          );
+        }else{
+          el.classList.add(
+            "final"
+          );
+        }
 
+      }
+    );
 
-ROUNDS.forEach(
-function(round){
+  }catch(e){
 
-var el =
-document.getElementById(
-roundId(round)
-);
+    console.log(
+      "Live load error",
+      e
+    );
 
-
-var value =
-
-data.rounds &&
-data.rounds[round]
-
-? data.rounds[round]
-
-: "--";
-
-
-el.textContent =
-value;
-
-
-if(
-value === "--"
-){
-
-el.classList.add(
-"empty"
-);
-
-}else{
-
-el.classList.remove(
-"empty"
-);
-
-}
-
-}
-);
-
-
-}catch(e){
-
-console.log(e);
-
-}
+  }
 
 }
 
@@ -1452,30 +1809,24 @@ console.log(e);
 loadLive();
 
 setInterval(
-loadLive,
-5000
+  loadLive,
+  5000
 );
 
 </script>
 
-
 </body>
-
 </html>
 `;
-
 }
-
-
 // ==================================================
-// ADMIN LOGIN
+// ADMIN LOGIN PAGE
 // ==================================================
 
 function adminLoginPage() {
 
 return `
 <!DOCTYPE html>
-
 <html>
 
 <head>
@@ -1484,112 +1835,115 @@ return `
 
 <meta
 name="viewport"
-content="
-width=device-width,
-initial-scale=1
-">
+content="width=device-width,initial-scale=1"
+>
 
-<title>
-NIGHT 2D ADMIN
-</title>
-
+<title>NIGHT 2D ADMIN</title>
 
 <style>
 
 *{
-box-sizing:border-box;
+  box-sizing:border-box;
 }
 
 body{
-margin:0;
-font-family:Arial;
-background:#07111c;
-color:white;
+  margin:0;
+  background:#07111c;
+  color:white;
+  font-family:Arial,Helvetica,sans-serif;
 }
 
 .wrap{
-max-width:500px;
-margin:auto;
-padding:30px 20px;
+  width:100%;
+  max-width:480px;
+  margin:auto;
+  padding:35px 18px;
 }
 
 .card{
-background:#0d1d2a;
-border:1px solid #17344a;
-padding:25px;
-border-radius:20px;
+  background:#0c1a27;
+  border:1px solid #17354a;
+  border-radius:22px;
+  padding:26px 20px;
 }
 
-h1{
-text-align:center;
-color:#168cff;
+.logo{
+  text-align:center;
+  font-size:30px;
+  font-weight:900;
+  margin-bottom:25px;
+}
+
+.logo span{
+  color:#0b88ff;
+}
+
+label{
+  font-weight:800;
 }
 
 input{
-width:100%;
-padding:16px;
-border-radius:12px;
-border:1px solid #365064;
-font-size:18px;
-margin:12px 0;
+  width:100%;
+  padding:15px;
+  margin-top:9px;
+  border:1px solid #365064;
+  border-radius:12px;
+  font-size:18px;
 }
 
 button{
-width:100%;
-padding:16px;
-background:#087cf0;
-border:0;
-border-radius:12px;
-color:white;
-font-size:19px;
-font-weight:bold;
+  width:100%;
+  margin-top:18px;
+  padding:16px;
+  border:0;
+  border-radius:12px;
+  background:#0b82ef;
+  color:white;
+  font-size:18px;
+  font-weight:900;
 }
 
 </style>
 
 </head>
 
-
 <body>
 
 <div class="wrap">
 
-<div class="card">
+  <div class="card">
 
-<h1>
-NIGHT 2D ADMIN
-</h1>
+    <div class="logo">
+      ☾ NIGHT <span>2D</span> ADMIN
+    </div>
 
+    <form
+      method="POST"
+      action="/admin/login"
+    >
 
-<form
-method="POST"
-action="/admin/login"
->
+      <label>
+        Admin Password
+      </label>
 
-<label>
-Admin Password
-</label>
+      <input
+        type="password"
+        name="password"
+        placeholder="Password"
+        required
+      >
 
-<input
-type="password"
-name="password"
-placeholder="Admin password"
-required
->
+      <button type="submit">
+        OPEN ADMIN
+      </button>
 
-<button type="submit">
-OPEN ADMIN
-</button>
+    </form>
 
-</form>
-
-
-</div>
+  </div>
 
 </div>
 
 </body>
-
 </html>
 `;
 
@@ -1604,7 +1958,6 @@ function adminPage() {
 
 return `
 <!DOCTYPE html>
-
 <html>
 
 <head>
@@ -1613,1121 +1966,1157 @@ return `
 
 <meta
 name="viewport"
-content="
-width=device-width,
-initial-scale=1
-">
+content="width=device-width,initial-scale=1"
+>
 
-<title>
-NIGHT 2D ADMIN
-</title>
-
+<title>NIGHT 2D ADMIN</title>
 
 <style>
 
 *{
-box-sizing:border-box;
+  box-sizing:border-box;
 }
 
 body{
-margin:0;
-background:#f4f7fa;
-font-family:Arial;
-color:#162330;
+  margin:0;
+  background:#f2f5f8;
+  color:#172330;
+  font-family:Arial,Helvetica,sans-serif;
 }
 
-.header{
-background:#07111c;
-color:white;
-padding:22px;
-text-align:center;
-font-size:28px;
-font-weight:900;
+.top{
+  background:#07111c;
+  color:#fff;
+  padding:20px;
+  text-align:center;
+  font-size:26px;
+  font-weight:900;
+}
+
+.top span{
+  color:#0b88ff;
 }
 
 .wrap{
-max-width:720px;
-margin:auto;
-padding:20px;
+  max-width:720px;
+  margin:auto;
+  padding:18px;
 }
 
 .card{
-background:white;
-border-radius:20px;
-padding:22px;
-margin-bottom:22px;
-box-shadow:
-0 8px 25px
-rgba(0,0,0,.07);
+  background:#fff;
+  border-radius:20px;
+  padding:20px;
+  margin-bottom:18px;
+  box-shadow:0 7px 24px rgba(0,0,0,.07);
 }
 
 h2{
-color:#087cf0;
-margin-top:0;
+  margin:0 0 18px;
+  color:#087cf0;
 }
 
 label{
-font-weight:700;
-display:block;
-margin-top:14px;
+  display:block;
+  margin-top:13px;
+  margin-bottom:6px;
+  font-weight:800;
 }
 
 input,
 select{
-width:100%;
-padding:15px;
-font-size:17px;
-border:
-1px solid
-#c9d2dc;
-border-radius:12px;
-margin-top:7px;
+  width:100%;
+  padding:14px;
+  border:1px solid #ccd5dd;
+  border-radius:12px;
+  background:#fff;
+  font-size:17px;
+}
+
+.auto-result{
+  background:#edf6ff;
+  border:2px solid #0b83f3;
+  color:#087cf0;
+  font-size:38px;
+  font-weight:900;
+  text-align:center;
+  letter-spacing:5px;
 }
 
 button{
-width:100%;
-border:0;
-border-radius:12px;
-padding:16px;
-font-size:18px;
-font-weight:800;
-color:#fff;
-margin-top:18px;
-cursor:pointer;
+  border:0;
+  border-radius:12px;
+  padding:15px;
+  font-size:17px;
+  font-weight:900;
+  cursor:pointer;
 }
 
 .save{
-background:#0783f3;
+  width:100%;
+  margin-top:18px;
+  background:#0783f3;
+  color:white;
 }
 
 .history-save{
-background:#15a04b;
+  width:100%;
+  margin-top:18px;
+  background:#129849;
+  color:white;
 }
 
 .logout{
-display:block;
-background:#e12d35;
-color:#fff;
-padding:14px;
-border-radius:12px;
-text-decoration:none;
-text-align:center;
-font-weight:800;
-margin-bottom:20px;
+  display:block;
+  margin-bottom:18px;
+  padding:14px;
+  border-radius:12px;
+  background:#df3038;
+  color:#fff;
+  text-align:center;
+  text-decoration:none;
+  font-weight:900;
 }
 
 .notice{
-padding:14px;
-border-radius:12px;
-margin:12px 0;
-display:none;
+  display:none;
+  padding:12px;
+  border-radius:10px;
+  margin-bottom:13px;
+  font-weight:700;
 }
 
-.success{
-display:block;
-background:#ddf8e7;
-color:#087c32;
+.notice.ok{
+  display:block;
+  background:#ddf8e7;
+  color:#087c32;
 }
 
-.error{
-display:block;
-background:#ffe1e1;
-color:#b41515;
+.notice.bad{
+  display:block;
+  background:#ffe1e1;
+  color:#ad1717;
 }
 
-.admin-list{
-margin-top:18px;
+.old-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:11px;
+  margin-top:15px;
 }
 
-.item{
-display:flex;
-align-items:center;
-justify-content:space-between;
-gap:12px;
-border:
-1px solid
-#dbe2e8;
-border-radius:12px;
-padding:12px;
-margin-bottom:9px;
+.old-box{
+  border:1px solid #d7dee5;
+  border-radius:15px;
+  padding:13px;
+  background:#fafbfd;
 }
 
-.item-result{
-font-size:25px;
-font-weight:900;
-color:#087cf0;
+.old-time{
+  text-align:center;
+  color:#596774;
+  font-size:14px;
+  font-weight:800;
+  margin-bottom:8px;
+}
+
+.old-box input{
+  text-align:center;
+  font-size:28px;
+  font-weight:900;
+  color:#087cf0;
+  padding:10px;
 }
 
 .small{
-font-size:13px;
-color:#65717d;
+  color:#6a7680;
+  font-size:13px;
+  line-height:1.5;
+}
+
+.admin-list{
+  margin-top:15px;
+}
+
+.item{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  border:1px solid #dbe2e8;
+  border-radius:12px;
+  padding:11px;
+  margin-bottom:8px;
+}
+
+.item-date{
+  font-size:12px;
+  color:#697683;
+}
+
+.item-result{
+  color:#087cf0;
+  font-size:26px;
+  font-weight:900;
+  margin-top:3px;
 }
 
 .delete{
-width:auto;
-padding:8px 12px;
-margin:0;
-background:#dc3545;
-font-size:13px;
+  background:#db343d;
+  color:#fff;
+  padding:8px 11px;
+  font-size:12px;
+}
+
+@media(max-width:420px){
+
+  .wrap{
+    padding:12px;
+  }
+
+  .card{
+    padding:16px;
+  }
+
+  .old-grid{
+    gap:8px;
+  }
+
+  .old-box{
+    padding:9px;
+  }
+
+  .old-time{
+    font-size:12px;
+  }
+
 }
 
 </style>
 
 </head>
 
-
 <body>
 
-
-<div class="header">
-🌙 NIGHT 2D ADMIN
+<div class="top">
+  ☾ NIGHT <span>2D</span> ADMIN
 </div>
-
 
 <div class="wrap">
 
-
-<a
-class="logout"
-href="/admin/logout"
->
-LOGOUT ADMIN
-</a>
-
+  <a
+    class="logout"
+    href="/admin/logout"
+  >
+    LOGOUT ADMIN
+  </a>
 
 
-<div class="card">
+  <!-- ======================================
+       PRESET / FINAL RESULT
+       ====================================== -->
 
-<h2>
-ကြိုတင် Result သတ်မှတ်ရန်
-</h2>
+  <div class="card">
 
+    <h2>
+      ကြိုတင် Result သတ်မှတ်ရန်
+    </h2>
 
-<div
-id="saveNotice"
-class="notice">
-</div>
+    <div
+      id="saveNotice"
+      class="notice"
+    ></div>
 
+    <label>
+      Result Date
+    </label>
 
-<label>
-Result Date
-</label>
-
-<input
-id="date"
-type="date"
->
-
-
-<label>
-Round Time
-</label>
+    <input
+      id="date"
+      type="date"
+    >
 
 
-<select id="round">
+    <label>
+      Round Time
+    </label>
 
-${ROUNDS.map(
-r =>
-`<option>${r}</option>`
-).join("")}
+    <select id="round">
 
-</select>
+      ${ROUNDS.map(
+        function(r){
+          return "<option>" + r + "</option>";
+        }
+      ).join("")}
 
-
-<label>
-2D RESULT
-</label>
-
-<input
-id="result"
-inputmode="numeric"
-maxlength="2"
-placeholder="00"
->
+    </select>
 
 
-<label>
-SET
-</label>
+    <label>
+      SET
+    </label>
 
-<input
-id="set"
-inputmode="decimal"
-placeholder="1234.56"
->
-
-
-<label>
-VALUE
-</label>
-
-<input
-id="value"
-inputmode="decimal"
-placeholder="56789.12"
->
+    <input
+      id="set"
+      inputmode="decimal"
+      placeholder="1298.45"
+      oninput="auto2D()"
+    >
 
 
-<button
-class="save"
-onclick="saveResult()"
->
-SAVE / UPDATE RESULT
-</button>
+    <label>
+      VALUE
+    </label>
+
+    <input
+      id="value"
+      inputmode="decimal"
+      placeholder="56789.12"
+      oninput="auto2D()"
+    >
 
 
-</div>
+    <label>
+      AUTO 2D RESULT
+    </label>
+
+    <input
+      id="result"
+      class="auto-result"
+      value="--"
+      readonly
+    >
 
 
+    <button
+      class="save"
+      onclick="saveResult()"
+    >
+      SAVE / UPDATE RESULT
+    </button>
 
-<div class="card">
-
-
-<h2>
-Add Old History
-</h2>
-
-
-<div
-id="historyNotice"
-class="notice">
-</div>
+  </div>
 
 
-<label>
-History Date
-</label>
+  <!-- ======================================
+       ADD OLD HISTORY - 6 ROUNDS
+       ====================================== -->
 
-<input
-id="historyDate"
-type="date"
->
+  <div class="card">
 
+    <h2>
+      Add Old History
+    </h2>
 
-<label>
-Round Time
-</label>
-
-
-<select id="historyRound">
-
-${ROUNDS.map(
-r =>
-`<option>${r}</option>`
-).join("")}
-
-</select>
+    <div
+      id="historyNotice"
+      class="notice"
+    ></div>
 
 
-<label>
-2D RESULT
-</label>
+    <label>
+      History Date
+    </label>
+
+    <input
+      id="historyDate"
+      type="date"
+      onchange="loadOldHistoryValues()"
+    >
 
 
-<input
-id="historyResult"
-inputmode="numeric"
-maxlength="2"
-placeholder="00"
->
+    <div class="old-grid">
+
+      ${ROUNDS.map(
+        function(round,index){
+
+          return (
+            '<div class="old-box">' +
+
+              '<div class="old-time">' +
+                '☾ ' + round +
+              '</div>' +
+
+              '<input ' +
+                'id="old_' + index + '" ' +
+                'inputmode="numeric" ' +
+                'maxlength="2" ' +
+                'placeholder="--"' +
+              '>' +
+
+            '</div>'
+          );
+
+        }
+      ).join("")}
+
+    </div>
 
 
-<button
-class="history-save"
-onclick="addHistory()"
->
-ADD OLD HISTORY
-</button>
+    <button
+      class="history-save"
+      onclick="saveOldHistory6()"
+    >
+      SAVE OLD HISTORY
+    </button>
 
 
-
-<h3>
-Admin Add Old History စာရင်း
-</h3>
-
-
-<div class="small">
-
-SET / VALUE မပြပါ။
-
-ကြိုတင်သတ်မှတ်ထားတဲ့ Result
-ဂဏန်းကိုတော့ Admin မှာ
-ချက်ချင်းမြင်ရပါမယ်။
-
-User App မှာ Round အချိန်
-မရောက်သေးရင် -- ပဲပြပါမယ်။
-
-</div>
+    <p class="small">
+      SET / VALUE ကို Add Old History မှာ မပြပါ။
+      Result ဂဏန်း ၆ ခုကိုပဲ သိမ်းနိုင်ပါတယ်။
+      Admin ကြိုတင်သတ်မှတ်ထားတဲ့ Result ရှိရင်
+      ဒီ box တွေထဲမှာလည်း ပြန်ပေါ်ပါမယ်။
+    </p>
 
 
-<div
-id="adminList"
-class="admin-list"
->
-Loading...
-</div>
+    <h3>
+      Admin Result List
+    </h3>
 
+    <div
+      id="adminList"
+      class="admin-list"
+    >
+      Loading...
+    </div>
+
+  </div>
 
 </div>
-
-
-</div>
-
 
 
 <script>
 
+const ROUNDS =
+${JSON.stringify(ROUNDS)};
+
+
+// ======================================
+// YANGON DATE
+// ======================================
 
 function todayYangon(){
 
-var now =
-new Date();
+  var parts =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone:"Asia/Yangon",
+        year:"numeric",
+        month:"2-digit",
+        day:"2-digit"
+      }
+    )
+    .formatToParts(
+      new Date()
+    );
 
+  var obj = {};
 
-var parts =
-new Intl.DateTimeFormat(
-"en-CA",
-{
-timeZone:
-"Asia/Yangon",
+  parts.forEach(
+    function(p){
+      obj[p.type] = p.value;
+    }
+  );
 
-year:"numeric",
-month:"2-digit",
-day:"2-digit"
+  return (
+    obj.year +
+    "-" +
+    obj.month +
+    "-" +
+    obj.day
+  );
 }
-)
-.formatToParts(now);
-
-
-var obj = {};
-
-
-parts.forEach(
-function(p){
-
-obj[p.type] =
-p.value;
-
-}
-);
-
-
-return (
-obj.year +
-"-" +
-obj.month +
-"-" +
-obj.day
-);
-
-}
-
 
 
 document
-.getElementById(
-"date"
-)
-.value =
-todayYangon();
-
+  .getElementById("date")
+  .value =
+  todayYangon();
 
 document
-.getElementById(
-"historyDate"
-)
-.value =
-todayYangon();
+  .getElementById("historyDate")
+  .value =
+  todayYangon();
 
 
+// ======================================
+// AUTO 2D
+//
+// SET   1298.45 → 5
+// VALUE 56789.12 → 2
+// RESULT = 52
+// ======================================
 
-function showNotice(
-id,
-message,
-ok
+function calculate2D(
+  setValue,
+  marketValue
 ){
 
-var el =
-document.getElementById(id);
+  var setText =
+    String(setValue || "")
+      .replace(/,/g,"")
+      .trim();
+
+  var valueText =
+    String(marketValue || "")
+      .replace(/,/g,"")
+      .trim();
 
 
-el.textContent =
-message;
+  if(
+    setText.indexOf(".") === -1
+  ){
+    return "--";
+  }
 
 
-el.className =
-"notice " +
-(
-ok
-? "success"
-: "error"
-);
+  var decimal =
+    setText
+      .split(".")
+      .pop()
+      .replace(/\\D/g,"");
 
+
+  if(!decimal){
+    return "--";
+  }
+
+
+  var setDigit =
+    decimal.slice(-1);
+
+
+  var valueDigits =
+    valueText.replace(
+      /\\D/g,
+      ""
+    );
+
+
+  if(!valueDigits){
+    return "--";
+  }
+
+
+  var valueDigit =
+    valueDigits.slice(-1);
+
+
+  return (
+    setDigit +
+    valueDigit
+  );
 }
 
 
+function auto2D(){
+
+  var setValue =
+    document
+      .getElementById("set")
+      .value;
+
+  var marketValue =
+    document
+      .getElementById("value")
+      .value;
+
+  document
+    .getElementById("result")
+    .value =
+    calculate2D(
+      setValue,
+      marketValue
+    );
+}
+
+
+// ======================================
+// NOTICE
+// ======================================
+
+function notice(
+  id,
+  message,
+  ok
+){
+
+  var el =
+    document.getElementById(id);
+
+  el.textContent =
+    message;
+
+  el.className =
+    "notice " +
+    (
+      ok
+        ? "ok"
+        : "bad"
+    );
+}
+
+
+// ======================================
+// SAVE FINAL / PRESET
+// Server side က Result ကို
+// SET / VALUE ကနေ ထပ်တွက်မယ်
+// ======================================
 
 async function saveResult(){
 
-var payload = {
+  var setValue =
+    document
+      .getElementById("set")
+      .value;
 
-result_date:
-document
-.getElementById(
-"date"
-)
-.value,
+  var marketValue =
+    document
+      .getElementById("value")
+      .value;
 
-round_time:
-document
-.getElementById(
-"round"
-)
-.value,
-
-result:
-document
-.getElementById(
-"result"
-)
-.value,
-
-set_value:
-document
-.getElementById(
-"set"
-)
-.value,
-
-market_value:
-document
-.getElementById(
-"value"
-)
-.value
-
-};
+  var preview =
+    calculate2D(
+      setValue,
+      marketValue
+    );
 
 
-try{
+  if(preview === "--"){
 
-var res =
-await fetch(
-"/api/admin/save",
-{
-method:"POST",
+    notice(
+      "saveNotice",
+      "SET / VALUE ကို မှန်အောင်ထည့်ပါ",
+      false
+    );
 
-headers:{
-"content-type":
-"application/json"
-},
-
-body:
-JSON.stringify(
-payload
-)
-}
-);
+    return;
+  }
 
 
-var data =
-await res.json();
+  var payload = {
+
+    result_date:
+      document
+        .getElementById("date")
+        .value,
+
+    round_time:
+      document
+        .getElementById("round")
+        .value,
+
+    set_value:
+      setValue,
+
+    market_value:
+      marketValue
+  };
 
 
-showNotice(
-"saveNotice",
-data.message ||
-data.error ||
-"Unknown",
-!!data.ok
-);
+  try{
+
+    var res =
+      await fetch(
+        "/api/admin/save",
+        {
+          method:"POST",
+
+          headers:{
+            "content-type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify(
+              payload
+            )
+        }
+      );
 
 
-if(data.ok){
-
-loadAdminList();
-
-}
+    var data =
+      await res.json();
 
 
-}catch(e){
-
-showNotice(
-"saveNotice",
-"Save Error",
-false
-);
-
-}
-
-}
+    notice(
+      "saveNotice",
+      data.message ||
+      data.error ||
+      "Unknown",
+      !!data.ok
+    );
 
 
+    if(data.ok){
 
-async function addHistory(){
+      document
+        .getElementById("result")
+        .value =
+        data.result || preview;
 
-var payload = {
+      await loadAdminList();
 
-result_date:
-document
-.getElementById(
-"historyDate"
-)
-.value,
+      await loadOldHistoryValues();
 
-round_time:
-document
-.getElementById(
-"historyRound"
-)
-.value,
-
-result:
-document
-.getElementById(
-"historyResult"
-)
-.value
-
-};
+    }
 
 
-try{
+  }catch(e){
 
-var res =
-await fetch(
-"/api/admin/add-history",
-{
-method:"POST",
+    notice(
+      "saveNotice",
+      "Save Error",
+      false
+    );
 
-headers:{
-"content-type":
-"application/json"
-},
-
-body:
-JSON.stringify(
-payload
-)
-}
-);
-
-
-var data =
-await res.json();
-
-
-showNotice(
-"historyNotice",
-data.message ||
-data.error ||
-"Unknown",
-!!data.ok
-);
-
-
-if(data.ok){
-
-document
-.getElementById(
-"historyResult"
-)
-.value = "";
-
-loadAdminList();
+  }
 
 }
 
 
-}catch(e){
+// ======================================
+// SAVE OLD HISTORY - 6 ROUNDS
+// ======================================
 
-showNotice(
-"historyNotice",
-"History Save Error",
-false
-);
+async function saveOldHistory6(){
+
+  var date =
+    document
+      .getElementById("historyDate")
+      .value;
+
+
+  if(!date){
+
+    notice(
+      "historyNotice",
+      "History Date ရွေးပါ",
+      false
+    );
+
+    return;
+  }
+
+
+  var saved = 0;
+
+
+  for(
+    var i = 0;
+    i < ROUNDS.length;
+    i++
+  ){
+
+    var input =
+      document
+        .getElementById(
+          "old_" + i
+        );
+
+
+    var result =
+      String(
+        input.value || ""
+      )
+      .replace(/\\D/g,"")
+      .slice(0,2);
+
+
+    // Blank ဖြစ်ရင် skip
+    if(!result){
+      continue;
+    }
+
+
+    if(result.length !== 2){
+
+      notice(
+        "historyNotice",
+        ROUNDS[i] +
+        " Result ၂လုံးထည့်ပါ",
+        false
+      );
+
+      return;
+    }
+
+
+    var res =
+      await fetch(
+        "/api/admin/add-history",
+        {
+          method:"POST",
+
+          headers:{
+            "content-type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify({
+              result_date:
+                date,
+
+              round_time:
+                ROUNDS[i],
+
+              result:
+                result
+            })
+        }
+      );
+
+
+    var data =
+      await res.json();
+
+
+    if(!data.ok){
+
+      notice(
+        "historyNotice",
+        data.error ||
+        "Save Error",
+        false
+      );
+
+      return;
+    }
+
+
+    saved++;
+
+  }
+
+
+  if(saved === 0){
+
+    notice(
+      "historyNotice",
+      "Result အနည်းဆုံးတစ်ခု ထည့်ပါ",
+      false
+    );
+
+    return;
+  }
+
+
+  notice(
+    "historyNotice",
+    saved +
+    " Round သိမ်းပြီးပါပြီ",
+    true
+  );
+
+
+  await loadAdminList();
+
+  await loadOldHistoryValues();
 
 }
 
-}
 
+// ======================================
+// ADMIN LIST LOAD
+// ======================================
+
+var adminResults = [];
 
 
 async function loadAdminList(){
 
-try{
+  try{
 
-var res =
-await fetch(
-"/api/admin/list?t=" +
-Date.now(),
-{
-cache:"no-store"
-}
-);
-
-
-var data =
-await res.json();
+    var res =
+      await fetch(
+        "/api/admin/list?t=" +
+        Date.now(),
+        {
+          cache:"no-store"
+        }
+      );
 
 
-var box =
-document
-.getElementById(
-"adminList"
-);
+    var data =
+      await res.json();
 
 
-if(
-!data.results ||
-data.results.length === 0
-){
-
-box.innerHTML =
-'<div class="small">' +
-'စာရင်းမရှိသေးပါ' +
-'</div>';
-
-return;
-
-}
+    adminResults =
+      data.results || [];
 
 
-box.innerHTML =
-data.results
-.map(
-function(r){
-
-return (
-
-'<div class="item">' +
-
-'<div>' +
-
-'<div class="small">' +
-
-escapeHtml(
-r.result_date
-) +
-
-' &nbsp; ' +
-
-escapeHtml(
-r.round_time
-) +
-
-'</div>' +
-
-'<div class="item-result">' +
-
-escapeHtml(
-r.result
-) +
-
-'</div>' +
-
-'</div>' +
-
-'<button class="delete" ' +
-
-'onclick="deleteResult(' +
-
-Number(r.id) +
-
-')">' +
-
-'DELETE' +
-
-'</button>' +
-
-'</div>'
-
-);
-
-}
-)
-.join("");
+    var box =
+      document
+        .getElementById(
+          "adminList"
+        );
 
 
-}catch(e){
+    if(
+      adminResults.length === 0
+    ){
 
-document
-.getElementById(
-"adminList"
-)
-.textContent =
-"List load error";
+      box.innerHTML =
+        '<div class="small">' +
+        'စာရင်းမရှိသေးပါ' +
+        '</div>';
 
-}
+      return;
+    }
+
+
+    box.innerHTML =
+      adminResults
+      .map(
+        function(r){
+
+          return (
+
+            '<div class="item">' +
+
+              '<div>' +
+
+                '<div class="item-date">' +
+
+                  escapeHtml(
+                    r.result_date
+                  ) +
+
+                  ' &nbsp; ' +
+
+                  escapeHtml(
+                    r.round_time
+                  ) +
+
+                '</div>' +
+
+                '<div class="item-result">' +
+
+                  escapeHtml(
+                    r.result
+                  ) +
+
+                '</div>' +
+
+              '</div>' +
+
+              '<button ' +
+                'class="delete" ' +
+                'onclick="deleteResult(' +
+                Number(r.id) +
+                ')">' +
+                'DELETE' +
+              '</button>' +
+
+            '</div>'
+
+          );
+
+        }
+      )
+      .join("");
+
+  }catch(e){
+
+    document
+      .getElementById(
+        "adminList"
+      )
+      .textContent =
+      "List Load Error";
+
+  }
 
 }
 
 
+// ======================================
+// PRESET RESULT ကို
+// ADD OLD HISTORY 6 BOX ထဲပြန်တင်
+// ======================================
+
+async function loadOldHistoryValues(){
+
+  if(
+    !adminResults.length
+  ){
+    await loadAdminList();
+  }
+
+
+  var date =
+    document
+      .getElementById(
+        "historyDate"
+      )
+      .value;
+
+
+  for(
+    var i = 0;
+    i < ROUNDS.length;
+    i++
+  ){
+
+    var input =
+      document
+        .getElementById(
+          "old_" + i
+        );
+
+
+    input.value = "";
+
+
+    var found =
+      adminResults.find(
+        function(r){
+
+          return (
+            r.result_date === date &&
+            r.round_time === ROUNDS[i]
+          );
+
+        }
+      );
+
+
+    if(found){
+
+      input.value =
+        found.result || "";
+
+    }
+
+  }
+
+}
+
+
+// ======================================
+// DELETE
+// ======================================
 
 async function deleteResult(id){
 
-if(
-!confirm(
-"ဒီ Result ကို ဖျက်မလား?"
-)
-){
+  if(
+    !confirm(
+      "ဒီ Result ကို ဖျက်မလား?"
+    )
+  ){
+    return;
+  }
 
-return;
+
+  try{
+
+    var res =
+      await fetch(
+        "/api/admin/delete",
+        {
+          method:"POST",
+
+          headers:{
+            "content-type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify({
+              id:id
+            })
+        }
+      );
+
+
+    var data =
+      await res.json();
+
+
+    if(!data.ok){
+
+      alert(
+        data.error ||
+        "Delete Error"
+      );
+
+      return;
+    }
+
+
+    await loadAdminList();
+
+    await loadOldHistoryValues();
+
+
+  }catch(e){
+
+    alert(
+      "Delete Error"
+    );
+
+  }
 
 }
 
 
-var res =
-await fetch(
-"/api/admin/delete",
-{
-method:"POST",
-
-headers:{
-"content-type":
-"application/json"
-},
-
-body:
-JSON.stringify({
-id:id
-})
-}
-);
-
-
-var data =
-await res.json();
-
-
-if(data.ok){
-
-loadAdminList();
-
-}else{
-
-alert(
-data.error ||
-"Delete error"
-);
-
-}
-
-}
-
-
+// ======================================
+// HTML SAFE
+// ======================================
 
 function escapeHtml(text){
 
-return String(text || "")
+  return String(text || "")
 
-.replace(
-/&/g,
-"&amp;"
-)
+    .replace(
+      /&/g,
+      "&amp;"
+    )
 
-.replace(
-/</g,
-"&lt;"
-)
+    .replace(
+      /</g,
+      "&lt;"
+    )
 
-.replace(
-/>/g,
-"&gt;"
-)
+    .replace(
+      />/g,
+      "&gt;"
+    )
 
-.replace(
-/"/g,
-"&quot;"
-)
+    .replace(
+      /"/g,
+      "&quot;"
+    )
 
-.replace(
-/'/g,
-"&#039;"
-);
+    .replace(
+      /'/g,
+      "&#039;"
+    );
 
 }
 
 
-loadAdminList();
+// ======================================
+// INITIAL
+// ======================================
 
+async function startAdmin(){
+
+  await loadAdminList();
+
+  await loadOldHistoryValues();
+
+}
+
+
+startAdmin();
 
 </script>
 
-
 </body>
-
 </html>
 `;
-
-}
-
-
-// ==================================================
-// HISTORY PAGE
-// ==================================================
-
-function historyPage() {
-
-return `
-<!DOCTYPE html>
-
-<html>
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-name="viewport"
-content="
-width=device-width,
-initial-scale=1
-">
-
-<title>
-NIGHT 2D HISTORY
-</title>
-
-
-<style>
-
-*{
-box-sizing:border-box;
-}
-
-body{
-margin:0;
-background:#020b15;
-color:white;
-font-family:Arial;
-}
-
-.wrap{
-max-width:650px;
-margin:auto;
-padding:22px;
-}
-
-h1{
-color:#168cff;
-text-align:center;
-}
-
-.back{
-display:block;
-text-align:center;
-color:white;
-text-decoration:none;
-background:#087cf0;
-padding:14px;
-border-radius:14px;
-margin-bottom:20px;
-}
-
-.item{
-background:#071725;
-border:
-1px solid
-#17354a;
-border-radius:15px;
-padding:17px;
-margin-bottom:10px;
-}
-
-.date{
-color:#8595a4;
-font-size:13px;
-}
-
-.row{
-display:flex;
-justify-content:space-between;
-align-items:center;
-margin-top:7px;
-}
-
-.result{
-font-size:30px;
-font-weight:900;
-color:#168cff;
-}
-
-</style>
-
-</head>
-
-
-<body>
-
-
-<div class="wrap">
-
-
-<h1>
-🌙 2D HISTORY
-</h1>
-
-
-<a
-class="back"
-href="/"
->
-← BACK TO NIGHT 2D
-</a>
-
-
-<div id="list">
-Loading...
-</div>
-
-
-</div>
-
-
-
-<script>
-
-
-async function load(){
-
-try{
-
-var res =
-await fetch(
-"/api/history?t=" +
-Date.now(),
-{
-cache:"no-store"
-}
-);
-
-
-var rows =
-await res.json();
-
-
-var list =
-document
-.getElementById(
-"list"
-);
-
-
-if(!rows.length){
-
-list.textContent =
-"History မရှိသေးပါ";
-
-return;
-
-}
-
-
-list.innerHTML =
-rows
-.map(
-function(r){
-
-return (
-
-'<div class="item">' +
-
-'<div class="date">' +
-
-escapeHtml(
-r.result_date
-) +
-
-'</div>' +
-
-'<div class="row">' +
-
-'<strong>' +
-
-escapeHtml(
-r.round_time
-) +
-
-'</strong>' +
-
-'<div class="result">' +
-
-escapeHtml(
-r.result
-) +
-
-'</div>' +
-
-'</div>' +
-
-'</div>'
-
-);
-
-}
-)
-.join("");
-
-
-}catch(e){
-
-document
-.getElementById(
-"list"
-)
-.textContent =
-"History Load Error";
-
-}
-
-}
-
-
-
-function escapeHtml(text){
-
-return String(text || "")
-
-.replace(
-/&/g,
-"&amp;"
-)
-
-.replace(
-/</g,
-"&lt;"
-)
-
-.replace(
-/>/g,
-"&gt;"
-)
-
-.replace(
-/"/g,
-"&quot;"
-)
-
-.replace(
-/'/g,
-"&#039;"
-);
-
-}
-
-
-load();
-
-
-</script>
-
-
-</body>
-
-</html>
-`;
-
 }
 
 
@@ -2736,36 +3125,35 @@ load();
 // ==================================================
 
 function messagePage(
-message,
-back
-) {
+  message,
+  back
+){
 
 return `
 <!DOCTYPE html>
-
 <html>
 
 <head>
 
+<meta charset="UTF-8">
+
 <meta
 name="viewport"
-content="
-width=device-width,
-initial-scale=1
-">
+content="width=device-width,initial-scale=1"
+>
 
-<title>
-NIGHT 2D
-</title>
+<title>NIGHT 2D</title>
 
 </head>
 
-
 <body
 style="
+margin:0;
+padding:35px 20px;
 font-family:Arial;
-padding:30px;
 text-align:center;
+background:#07111c;
+color:#fff;
 "
 >
 
@@ -2775,45 +3163,532 @@ ${escapeServer(message)}
 
 <a
 href="${escapeServer(back)}"
+style="
+color:#38a4ff;
+font-weight:bold;
+"
 >
 ပြန်သွားရန်
 </a>
 
 </body>
-
 </html>
 `;
+}
+
+
+function escapeServer(text){
+
+  return String(text || "")
+
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+
+    .replace(
+      /</g,
+      "&lt;"
+    )
+
+    .replace(
+      />/g,
+      "&gt;"
+    )
+
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+
+    .replace(
+      /'/g,
+      "&#039;"
+    );
+}
+// ==================================================
+// HISTORY PAGE
+// ==================================================
+
+function historyPage() {
+
+return `
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+name="viewport"
+content="width=device-width,initial-scale=1,viewport-fit=cover"
+>
+
+<title>NIGHT 2D HISTORY</title>
+
+<style>
+
+*{
+  box-sizing:border-box;
+  -webkit-tap-highlight-color:transparent;
+}
+
+html,
+body{
+  margin:0;
+  padding:0;
+  width:100%;
+  min-height:100%;
+}
+
+body{
+  background:
+    radial-gradient(
+      circle at 50% 12%,
+      #111820 0%,
+      #090d12 36%,
+      #05070a 100%
+    );
+  color:#fff;
+  font-family:Arial,Helvetica,sans-serif;
+}
+
+.wrap{
+  width:100%;
+  max-width:720px;
+  margin:auto;
+  padding:18px 15px 30px;
+}
+
+.topbar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:24px;
+}
+
+.back{
+  color:#fff;
+  text-decoration:none;
+  font-size:30px;
+  line-height:1;
+}
+
+.title{
+  font-size:27px;
+  font-weight:900;
+}
+
+.day-block{
+  margin-bottom:26px;
+}
+
+.day-title{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:18px;
+  font-weight:900;
+  margin-bottom:12px;
+}
+
+.day-title .moon{
+  color:#278dff;
+  font-size:23px;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:9px;
+}
+
+.card{
+  min-height:112px;
+  border-radius:15px;
+  background:
+    linear-gradient(
+      145deg,
+      #242a30,
+      #171c21
+    );
+  border:1px solid #303841;
+  padding:10px 7px;
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  align-items:center;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.03);
+}
+
+.result{
+  font-size:27px;
+  font-weight:900;
+  line-height:1;
+}
+
+.card-moon{
+  font-size:25px;
+  color:#2a8eff;
+  line-height:1;
+}
+
+.time{
+  font-size:12px;
+  font-weight:800;
+  color:#d2d8de;
+  text-align:center;
+  white-space:nowrap;
+}
+
+.empty{
+  color:#697682;
+}
+
+.loading,
+.no-history,
+.error{
+  padding:30px 10px;
+  text-align:center;
+  color:#8896a3;
+  font-weight:700;
+}
+
+@media(max-width:380px){
+
+  .wrap{
+    padding:14px 10px 25px;
+  }
+
+  .title{
+    font-size:23px;
+  }
+
+  .grid{
+    gap:7px;
+  }
+
+  .card{
+    min-height:99px;
+    border-radius:13px;
+  }
+
+  .result{
+    font-size:24px;
+  }
+
+  .card-moon{
+    font-size:22px;
+  }
+
+  .time{
+    font-size:10px;
+  }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div class="wrap">
+
+  <div class="topbar">
+
+    <a
+      class="back"
+      href="/"
+    >
+      ‹
+    </a>
+
+    <div class="title">
+      History
+    </div>
+
+  </div>
+
+
+  <div
+    id="historyList"
+    class="loading"
+  >
+    Loading...
+  </div>
+
+</div>
+
+
+<script>
+
+const ROUNDS =
+${JSON.stringify(ROUNDS)};
+
+
+// ======================================
+// DATE DISPLAY
+// ======================================
+
+function displayDate(dateText){
+
+  var p =
+    String(dateText || "")
+    .split("-");
+
+  if(p.length !== 3){
+    return dateText;
+  }
+
+  return (
+    p[2] +
+    "/" +
+    p[1] +
+    "/" +
+    p[0]
+  );
 
 }
 
 
-function escapeServer(text) {
+// ======================================
+// GROUP HISTORY BY DATE
+// ======================================
 
-return String(text || "")
+function groupByDate(rows){
 
-.replace(
-/&/g,
-"&amp;"
-)
+  var groups = {};
 
-.replace(
-/</g,
-"&lt;"
-)
+  rows.forEach(
+    function(row){
 
-.replace(
-/>/g,
-"&gt;"
-)
+      if(!groups[row.result_date]){
+        groups[row.result_date] = {};
+      }
 
-.replace(
-/"/g,
-"&quot;"
-)
+      groups[row.result_date][
+        row.round_time
+      ] = row;
 
-.replace(
-/'/g,
-"&#039;"
-);
+    }
+  );
 
-            }
+  return groups;
+
+}
+
+
+// ======================================
+// HTML ESCAPE
+// ======================================
+
+function escapeHtml(text){
+
+  return String(text || "")
+
+    .replace(
+      /&/g,
+      "&amp;"
+    )
+
+    .replace(
+      /</g,
+      "&lt;"
+    )
+
+    .replace(
+      />/g,
+      "&gt;"
+    )
+
+    .replace(
+      /"/g,
+      "&quot;"
+    )
+
+    .replace(
+      /'/g,
+      "&#039;"
+    );
+
+}
+
+
+// ======================================
+// LOAD
+// ======================================
+
+async function loadHistory(){
+
+  var root =
+    document
+    .getElementById(
+      "historyList"
+    );
+
+
+  try{
+
+    var res =
+      await fetch(
+        "/api/history?t=" +
+        Date.now(),
+        {
+          cache:"no-store"
+        }
+      );
+
+
+    var rows =
+      await res.json();
+
+
+    if(
+      !Array.isArray(rows) ||
+      rows.length === 0
+    ){
+
+      root.className =
+        "no-history";
+
+      root.textContent =
+        "History မရှိသေးပါ";
+
+      return;
+    }
+
+
+    var groups =
+      groupByDate(rows);
+
+
+    var dates =
+      Object.keys(groups)
+      .sort()
+      .reverse();
+
+
+    root.className = "";
+
+
+    root.innerHTML =
+      dates
+      .map(
+        function(date){
+
+          var roundMap =
+            groups[date];
+
+
+          var cards =
+            ROUNDS
+            .map(
+              function(round){
+
+                var row =
+                  roundMap[round];
+
+
+                var value =
+                  row &&
+                  row.result
+                    ? row.result
+                    : "--";
+
+
+                return (
+
+                  '<div class="card">' +
+
+                    '<div class="result ' +
+                    (
+                      value === "--"
+                        ? "empty"
+                        : ""
+                    ) +
+                    '">' +
+
+                      escapeHtml(
+                        value
+                      ) +
+
+                    '</div>' +
+
+                    '<div class="card-moon">' +
+                      '☾' +
+                    '</div>' +
+
+                    '<div class="time">' +
+
+                      escapeHtml(
+                        round
+                      ) +
+
+                    '</div>' +
+
+                  '</div>'
+
+                );
+
+              }
+            )
+            .join("");
+
+
+          return (
+
+            '<section class="day-block">' +
+
+              '<div class="day-title">' +
+
+                '<span class="moon">' +
+                  '☾' +
+                '</span>' +
+
+                '<span>' +
+                  escapeHtml(
+                    displayDate(date)
+                  ) +
+                '</span>' +
+
+              '</div>' +
+
+              '<div class="grid">' +
+                cards +
+              '</div>' +
+
+            '</section>'
+
+          );
+
+        }
+      )
+      .join("");
+
+
+  }catch(e){
+
+    root.className =
+      "error";
+
+    root.textContent =
+      "History Load Error";
+
+  }
+
+}
+
+
+loadHistory();
+
+</script>
+
+</body>
+</html>
+`;
+
+}

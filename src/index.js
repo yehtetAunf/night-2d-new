@@ -1387,14 +1387,14 @@ body{
   justify-content:center;
 }
 
-/* Main 2D: jump 3 times before showing a newly received result */
-.main-result.result-jump{
-  animation: resultJump .24s ease-in-out 0s 3;
+/* Main 2D: jump 3 times before showing a new result */
+.main-result.jump-before-change{
+  animation:mainResultJump .22s ease-in-out 3;
 }
 
-@keyframes resultJump{
-  0%,100%{ transform:translateY(0) scale(1); }
-  50%{ transform:translateY(-16px) scale(1.06); }
+@keyframes mainResultJump{
+  0%,100%{ transform:translateY(0); }
+  50%{ transform:translateY(-14px); }
 }
 
 .updated{
@@ -1406,11 +1406,7 @@ body{
 }
 
 .live-date{
-  text-align:center;
-  font-size:13px;
-  color:#7f94a8;
-  margin-top:-6px;
-  margin-bottom:12px;
+  display:none !important;
 }
 
 .info{
@@ -1664,6 +1660,11 @@ body{
   </span>
 </div>
 
+  <div
+    id="liveDate"
+    class="live-date">
+    🌙 --/--/----
+  </div>
 
   <div class="info">
 
@@ -1802,49 +1803,37 @@ function formatDate(){
 }
 
 
-let lastMainResult = null;
-let mainResultAnimating = false;
-let queuedMainResult = null;
+var lastMainResult = null;
+var mainResultAnimating = false;
 
-function updateMainResultWithJump(nextResult){
-  const el = document.getElementById("mainResult");
-  if (!el) return;
-
+function showMainResultWith3Jumps(nextResult){
+  var el = document.getElementById("mainResult");
   nextResult = nextResult || "--";
 
-  // First load: show immediately. Later changes: jump exactly 3 times, then change.
-  if (lastMainResult === null) {
+  // First page load: show current value immediately.
+  if(lastMainResult === null){
     lastMainResult = nextResult;
     el.textContent = nextResult;
     return;
   }
 
-  if (nextResult === lastMainResult) return;
-
-  if (mainResultAnimating) {
-    queuedMainResult = nextResult;
+  // No change, or an animation is already running.
+  if(nextResult === lastMainResult || mainResultAnimating){
     return;
   }
 
+  // Keep the OLD number visible while it jumps exactly 3 times.
   mainResultAnimating = true;
-  el.classList.remove("result-jump");
+  el.classList.remove("jump-before-change");
   void el.offsetWidth;
-  el.classList.add("result-jump");
+  el.classList.add("jump-before-change");
 
   el.addEventListener("animationend", function finishJump(){
-    el.classList.remove("result-jump");
+    el.classList.remove("jump-before-change");
     el.textContent = nextResult;
     lastMainResult = nextResult;
     mainResultAnimating = false;
-
-    if (queuedMainResult !== null && queuedMainResult !== lastMainResult) {
-      const queued = queuedMainResult;
-      queuedMainResult = null;
-      updateMainResultWithJump(queued);
-    } else {
-      queuedMainResult = null;
-    }
-  }, { once:true });
+  }, {once:true});
 }
 
 async function loadLive(){
@@ -1867,7 +1856,7 @@ async function loadLive(){
       return;
     }
 
-    updateMainResultWithJump(
+    showMainResultWith3Jumps(
       data.main_result || "--"
     );
 

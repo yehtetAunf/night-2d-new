@@ -1574,12 +1574,13 @@ body{
     --
   </div>
 
-  <div class="updated">
-    Updated
-    <span id="updatedText">
-      --/--/---- | --:--:--
-    </span>
-  </div>
+<div class="updated">
+  <span id="finalCheck" style="display:none;color:#19e68c;font-weight:900;">✓</span>
+  Updated
+  <span id="updatedText">
+    --/--/---- | --:--:--
+  </span>
+</div>
 
   <div
     id="liveDate"

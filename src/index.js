@@ -2283,7 +2283,40 @@ button{
   >
     LOGOUT ADMIN
   </a>
+<!-- ======================================
+     LIVE ON / OFF CONTROL
+     ====================================== -->
 
+<div class="card">
+
+  <h2>Live Control</h2>
+
+  <div
+    id="liveControlStatus"
+    style="
+      text-align:center;
+      font-size:22px;
+      font-weight:900;
+      margin-bottom:15px;
+    "
+  >
+    Checking...
+  </div>
+
+  <button
+    id="liveControlBtn"
+    type="button"
+    onclick="toggleLiveControl()"
+    style="
+      width:100%;
+      background:#e5323a;
+      color:#fff;
+    "
+  >
+    LIVE OFF
+  </button>
+
+</div>
 
   <!-- ======================================
        PRESET / FINAL RESULT

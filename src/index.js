@@ -3,19 +3,6 @@ export default {
 
     const url = new URL(request.url);
 
-    if (url.pathname === "/api/today") {
-      const today = new Date().toISOString().slice(0,10);
-
-      const data = await env.DB.prepare(
-        "SELECT * FROM results WHERE result_date=? ORDER BY round_time"
-      )
-      .bind(today)
-      .all();
-
-      return Response.json(data.results);
-    }
-
-
     if (url.pathname === "/admin") {
       return new Response(adminPage(), {
         headers:{
@@ -24,113 +11,218 @@ export default {
       });
     }
 
-
-    return new Response(homePage(),{
+    return new Response(userPage(), {
       headers:{
         "content-type":"text/html;charset=UTF-8"
       }
     });
+
   }
-};
+}
 
 
-function homePage(){
+function userPage(){
 
 return `
 <!DOCTYPE html>
 <html>
 <head>
 <title>NIGHT 2D</title>
+
 <style>
+
 body{
+margin:0;
 background:#020817;
 color:white;
 font-family:Arial;
 text-align:center;
 }
-h1{
-font-size:45px;
-}
-.result{
-font-size:120px;
+
+.header{
+padding:25px;
+font-size:35px;
 font-weight:bold;
 }
-.box{
+
+.live{
+border:2px solid #0787ff;
+border-radius:30px;
+padding:8px 20px;
+font-size:16px;
+color:white;
+}
+
+.result{
+font-size:150px;
+font-weight:bold;
+margin-top:30px;
+}
+
+.time{
+font-size:20px;
+color:#ddd;
+}
+
+.info{
 display:grid;
 grid-template-columns:1fr 1fr;
 gap:15px;
 padding:20px;
 }
-.card{
-border:1px solid #123;
+
+.box{
+border:1px solid #234;
 border-radius:20px;
 padding:25px;
 font-size:25px;
 }
-.blue{
+
+.set{
 color:#0787ff;
 }
-.green{
+
+.value{
 color:#00ff99;
 }
+
+
+.rounds{
+
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:15px;
+padding:20px;
+
+}
+
+.card{
+
+border:2px solid #123;
+border-radius:20px;
+padding:25px;
+font-size:25px;
+
+}
+
+
+button{
+
+width:90%;
+padding:20px;
+border-radius:30px;
+border:none;
+background:#0787ff;
+color:white;
+font-size:25px;
+
+}
+
 </style>
+
 </head>
+
 
 <body>
 
-<h1>☾ NIGHT <span class="blue">2D</span></h1>
 
-<div class="result">--</div>
+<div class="header">
+☾ NIGHT <span style="color:#0787ff">2D</span>
 
-<p>Updated --</p>
+<br>
 
-<div class="box">
-
-<div class="card blue">
-SET<br>--
-</div>
-
-<div class="card green">
-VALUE<br>--
-</div>
+<span class="live">
+● 2D LIVE NOW
+</span>
 
 </div>
 
 
-<div class="box">
+<div class="result">
+--
+</div>
+
+
+<div class="time">
+Updated --/--/---- | --:--
+</div>
+
+
+<div class="info">
+
+<div class="box set">
+SET
+<br>
+--
+</div>
+
+
+<div class="box value">
+VALUE
+<br>
+--
+</div>
+
+</div>
+
+
+
+<div class="rounds">
+
 
 <div class="card">
-☾ 10:00 PM<br><br>--
-</div>
-
-<div class="card">
-☾ 10:30 PM<br><br>--
-</div>
-
-
-<div class="card">
-☾ 11:00 PM<br><br>--
+☾ 10:00 PM
+<br><br>
+--
 </div>
 
 
 <div class="card">
-☾ 11:30 PM<br><br>--
+☾ 10:30 PM
+<br><br>
+--
 </div>
 
 
 <div class="card">
-☾ 12:00 AM<br><br>--
+☾ 11:00 PM
+<br><br>
+--
 </div>
 
 
 <div class="card">
-☾ 12:30 AM<br><br>--
+☾ 11:30 PM
+<br><br>
+--
 </div>
 
+
+<div class="card">
+☾ 12:00 AM
+<br><br>
+--
 </div>
+
+
+<div class="card">
+☾ 12:30 AM
+<br><br>
+--
+</div>
+
+
+</div>
+
+
+<button>
+◷ 2D HISTORY
+</button>
+
 
 </body>
 </html>
+
 `;
 
 }
@@ -140,50 +232,126 @@ VALUE<br>--
 function adminPage(){
 
 return `
+
+<!DOCTYPE html>
+
 <html>
+
+<head>
+
+<title>NIGHT 2D ADMIN</title>
+
+<style>
+
+body{
+font-family:Arial;
+padding:20px;
+}
+
+input,select{
+
+width:100%;
+padding:15px;
+margin:8px;
+
+font-size:18px;
+
+}
+
+
+button{
+
+padding:15px;
+width:100%;
+background:#0787ff;
+color:white;
+border:0;
+border-radius:10px;
+
+}
+
+</style>
+
+
+</head>
+
+
 <body>
 
-<h1>NIGHT 2D ADMIN</h1>
 
-<h2>Set Result</h2>
+<h1>
+NIGHT 2D ADMIN
+</h1>
 
-Date<br>
-<input type="date"><br><br>
 
-Round<br>
+<h2>
+Set Result
+</h2>
+
+
+Date
+
+<input type="date">
+
+
+Round Time
+
 <select>
+
 <option>10:00 PM</option>
 <option>10:30 PM</option>
 <option>11:00 PM</option>
 <option>11:30 PM</option>
 <option>12:00 AM</option>
 <option>12:30 AM</option>
+
 </select>
 
-<br><br>
 
-2D Result<br>
+
+2D Result
+
 <input placeholder="00">
 
-<br><br>
-
-SET<br>
-<input>
-
-<br><br>
-
-VALUE<br>
-<input>
 
 
-<h2>Add Old History</h2>
+SET
 
-Result Only:
+<input placeholder="SET">
+
+
+
+VALUE
+
+<input placeholder="VALUE">
+
+
+
+<button>
+SAVE RESULT
+</button>
+
+
+
+<h2>
+Add Old History
+</h2>
+
+
+Result Only
+
 <input placeholder="00">
+
+
+<button>
+ADD HISTORY
+</button>
 
 
 </body>
+
 </html>
+
 `;
 
 }

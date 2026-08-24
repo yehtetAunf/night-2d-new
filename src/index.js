@@ -1387,6 +1387,16 @@ body{
   justify-content:center;
 }
 
+/* Main 2D: jump 3 times before showing a newly received result */
+.main-result.result-jump{
+  animation: resultJump .24s ease-in-out 0s 3;
+}
+
+@keyframes resultJump{
+  0%,100%{ transform:translateY(0) scale(1); }
+  50%{ transform:translateY(-16px) scale(1.06); }
+}
+
 .updated{
   text-align:center;
   font-size:14px;
@@ -1654,11 +1664,6 @@ body{
   </span>
 </div>
 
-  <div
-    id="liveDate"
-    class="live-date">
-    🌙 --/--/----
-  </div>
 
   <div class="info">
 
@@ -1797,6 +1802,51 @@ function formatDate(){
 }
 
 
+let lastMainResult = null;
+let mainResultAnimating = false;
+let queuedMainResult = null;
+
+function updateMainResultWithJump(nextResult){
+  const el = document.getElementById("mainResult");
+  if (!el) return;
+
+  nextResult = nextResult || "--";
+
+  // First load: show immediately. Later changes: jump exactly 3 times, then change.
+  if (lastMainResult === null) {
+    lastMainResult = nextResult;
+    el.textContent = nextResult;
+    return;
+  }
+
+  if (nextResult === lastMainResult) return;
+
+  if (mainResultAnimating) {
+    queuedMainResult = nextResult;
+    return;
+  }
+
+  mainResultAnimating = true;
+  el.classList.remove("result-jump");
+  void el.offsetWidth;
+  el.classList.add("result-jump");
+
+  el.addEventListener("animationend", function finishJump(){
+    el.classList.remove("result-jump");
+    el.textContent = nextResult;
+    lastMainResult = nextResult;
+    mainResultAnimating = false;
+
+    if (queuedMainResult !== null && queuedMainResult !== lastMainResult) {
+      const queued = queuedMainResult;
+      queuedMainResult = null;
+      updateMainResultWithJump(queued);
+    } else {
+      queuedMainResult = null;
+    }
+  }, { once:true });
+}
+
 async function loadLive(){
 
   try{
@@ -1817,12 +1867,9 @@ async function loadLive(){
       return;
     }
 
-    document
-      .getElementById(
-        "mainResult"
-      )
-      .textContent =
-      data.main_result || "--";
+    updateMainResultWithJump(
+      data.main_result || "--"
+    );
 
     document
       .getElementById(
@@ -1855,12 +1902,6 @@ if (data.final_window === true) {
 } else {
   finalCheck.style.display = "none";
 }
-    document
-      .getElementById(
-        "liveDate"
-      )
-      .textContent =
-      "🌙 " + formatDate();
 
     ROUNDS.forEach(
       function(round){

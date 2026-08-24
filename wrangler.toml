@@ -1,0 +1,8 @@
+name = "night-2d-new"
+main = "src/index.js"
+compatibility_date = "2026-08-24"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "night-2d-db"
+database_id = "PUT_YOUR_D1_DATABASE_ID_HERE"

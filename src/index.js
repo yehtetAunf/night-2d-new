@@ -8,9 +8,9 @@ const ROUNDS = [
 ];
 
 const COOKIE_NAME = "night2d_admin";
-const TWELVE_SYMBOL = "BTC/USD";
+const COINBASE_PRODUCT = "BTC-USD";
 const FINAL_SHOW_MS = 2 * 60 * 1000;
-const MARKET_CACHE_MS = 60 * 1000;
+const MARKET_CACHE_MS = 5 * 1000;
 const LIVE_CONTROL_KEY = "live_enabled";
 let marketCache = {
   data: null,
@@ -201,7 +201,7 @@ if (
         request.method === "GET"
       ) {
         const market =
-          await getTwelveDataMarket(env);
+          await getCoinbaseMarket();
 
         return json({
           ok: true,
@@ -622,14 +622,14 @@ if (
 
 
 // ==================================================
-// TWELVE DATA LIVE MARKET
+// COINBASE BTC-USD LIVE MARKET
 // ==================================================
 
-async function getTwelveDataMarket(env) {
+async function getCoinbaseMarket() {
 
   const now = Date.now();
 
-  // 60 SECOND CACHE
+  // 5 SECOND CACHE
   if (
     marketCache.data &&
     (now - marketCache.time) < MARKET_CACHE_MS
@@ -637,128 +637,74 @@ async function getTwelveDataMarket(env) {
     return marketCache.data;
   }
 
-  if (!env.TWELVE_DATA_API_KEY) {
-    throw new Error(
-      "TWELVE_DATA_API_KEY မရှိပါ"
-    );
-  }
-
   const endpoint =
-    "https://api.twelvedata.com/time_series" +
-    "?symbol=" +
-    encodeURIComponent(TWELVE_SYMBOL) +
-    "&interval=1min" +
-    "&outputsize=1" +
-    "&apikey=" +
-    encodeURIComponent(
-      env.TWELVE_DATA_API_KEY
-    );
+    "https://api.exchange.coinbase.com/products/" +
+    encodeURIComponent(COINBASE_PRODUCT) +
+    "/ticker";
 
-  const response =
-    await fetch(endpoint, {
-      headers: {
-        Accept: "application/json"
-      }
-    });
+  const response = await fetch(endpoint, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "NIGHT-2D-Worker"
+    }
+  });
 
   if (!response.ok) {
     throw new Error(
-      "Twelve Data HTTP " +
-      response.status
+      "Coinbase HTTP " + response.status
     );
   }
 
-  const data =
-    await response.json();
+  const data = await response.json();
 
-  if (data.status === "error") {
-    throw new Error(
-      data.message ||
-      "Twelve Data API Error"
-    );
-  }
+  const setValue = String(
+    data.price || ""
+  ).trim();
 
-  if (
-    !Array.isArray(data.values) ||
-    data.values.length === 0
-  ) {
-    throw new Error(
-      "Twelve Data Live Data မရပါ"
-    );
-  }
+  let marketValue = String(
+    data.volume || ""
+  ).trim();
 
-  const latest =
-    data.values[0];
-
-  // SET = BTC/USD CLOSE
-  const setValue =
-    String(
-      latest.close || ""
-    ).trim();
-
-  // VALUE = VOLUME
-  // Volume မရရင် close digits ကို fallback သုံး
-  let marketValue =
-    String(
-      latest.volume || ""
-    ).trim();
-
-  if (!marketValue) {
-
-    const closeDigits =
-      String(
-        latest.close || ""
-      )
-      .replace(/\D/g, "");
-
-    marketValue =
-      closeDigits || "";
+  // Remove only unnecessary trailing zeroes from VALUE,
+  // so the displayed last digit is also the 2D VALUE digit.
+  if (marketValue.includes(".")) {
+    marketValue = marketValue
+      .replace(/0+$/, "")
+      .replace(/\.$/, "");
   }
 
   if (!setValue) {
     throw new Error(
-      "Live SET value မရပါ"
+      "Coinbase Live SET value မရပါ"
     );
   }
 
   if (!marketValue) {
     throw new Error(
-      "Live VALUE မရပါ"
+      "Coinbase Live VALUE မရပါ"
     );
   }
 
-  const result =
-    calculate2D(
-      setValue,
-      marketValue
-    );
+  const result = calculate2D(
+    setValue,
+    marketValue
+  );
 
   const market = {
-
-    symbol:
-      TWELVE_SYMBOL,
-
-    set_value:
-      setValue,
-
-    market_value:
-      marketValue,
-
-    result:
-      result || "--",
-
-    datetime:
-      latest.datetime || null
+    symbol: COINBASE_PRODUCT,
+    set_value: setValue,
+    market_value: marketValue,
+    result: result || "--",
+    datetime: data.time || new Date().toISOString()
   };
 
-  // CACHE SAVE
   marketCache = {
     data: market,
     time: now
   };
 
   return market;
-      }
+}
 
 
 // ==================================================
@@ -834,6 +780,28 @@ function calculate2D(
 
 
 // ==================================================
+// LIVE CONTROL STATE
+// Default = ON
+// ==================================================
+
+async function getLiveEnabled(env) {
+  try {
+    const row = await env.DB.prepare(`
+      SELECT setting_value
+      FROM settings
+      WHERE setting_key = ?
+    `)
+      .bind(LIVE_CONTROL_KEY)
+      .first();
+
+    return !row || row.setting_value === "1";
+  } catch (e) {
+    return true;
+  }
+}
+
+
+// ==================================================
 // USER STATE
 // Live before round
 // Admin final after round
@@ -872,18 +840,28 @@ async function getUserState(env) {
     savedByRound[row.round_time] = row;
   }
 
-  let market;
+  const liveEnabled =
+    await getLiveEnabled(env);
 
-  try {
-    market =
-      await getTwelveDataMarket(env);
-  } catch (e) {
-    market = {
-      set_value: "--",
-      market_value: "--",
-      result: "--",
-      datetime: null
-    };
+  let market = {
+    set_value: "--",
+    market_value: "--",
+    result: "--",
+    datetime: null
+  };
+
+  if (liveEnabled) {
+    try {
+      market =
+        await getCoinbaseMarket();
+    } catch (e) {
+      market = {
+        set_value: "--",
+        market_value: "--",
+        result: "--",
+        datetime: null
+      };
+    }
   }
 
   const roundResults = {};
@@ -981,7 +959,10 @@ async function getUserState(env) {
     mode:
       finalWindow
         ? "FINAL"
-        : "LIVE",
+        : (liveEnabled ? "LIVE" : "OFF"),
+
+    live_enabled:
+      liveEnabled,
 
     final_window:
       finalWindow,

@@ -9,7 +9,13 @@ const ROUNDS = [
 
 const COOKIE_NAME = "night2d_admin";
 const TWELVE_SYMBOL = "BTC/USD";
+const FINAL_SHOW_MS = 2 * 60 * 1000;
+const MARKET_CACHE_MS = 60 * 1000;
 
+let marketCache = {
+  data: null,
+  time: 0
+};
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -549,6 +555,16 @@ export default {
 
 async function getTwelveDataMarket(env) {
 
+  const now = Date.now();
+
+  // 60 SECOND CACHE
+  if (
+    marketCache.data &&
+    (now - marketCache.time) < MARKET_CACHE_MS
+  ) {
+    return marketCache.data;
+  }
+
   if (!env.TWELVE_DATA_API_KEY) {
     throw new Error(
       "TWELVE_DATA_API_KEY မရှိပါ"
@@ -602,17 +618,30 @@ async function getTwelveDataMarket(env) {
   const latest =
     data.values[0];
 
-  // SET = BTC/USD close price
+  // SET = BTC/USD CLOSE
   const setValue =
     String(
       latest.close || ""
     ).trim();
 
-  // VALUE = 1 minute volume
-  const marketValue =
+  // VALUE = VOLUME
+  // Volume မရရင် close digits ကို fallback သုံး
+  let marketValue =
     String(
       latest.volume || ""
     ).trim();
+
+  if (!marketValue) {
+
+    const closeDigits =
+      String(
+        latest.close || ""
+      )
+      .replace(/\D/g, "");
+
+    marketValue =
+      closeDigits || "";
+  }
 
   if (!setValue) {
     throw new Error(
@@ -632,7 +661,8 @@ async function getTwelveDataMarket(env) {
       marketValue
     );
 
-  return {
+  const market = {
+
     symbol:
       TWELVE_SYMBOL,
 
@@ -648,7 +678,15 @@ async function getTwelveDataMarket(env) {
     datetime:
       latest.datetime || null
   };
-}
+
+  // CACHE SAVE
+  marketCache = {
+    data: market,
+    time: now
+  };
+
+  return market;
+      }
 
 
 // ==================================================

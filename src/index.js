@@ -11,7 +11,7 @@ const COOKIE_NAME = "night2d_admin";
 const TWELVE_SYMBOL = "BTC/USD";
 const FINAL_SHOW_MS = 2 * 60 * 1000;
 const MARKET_CACHE_MS = 60 * 1000;
-
+const LIVE_CONTROL_KEY = "live_enabled";
 let marketCache = {
   data: null,
   time: 0

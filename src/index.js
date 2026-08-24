@@ -12,6 +12,7 @@ const COINBASE_PRODUCT = "BTC-USD";
 const FINAL_SHOW_MS = 2 * 60 * 1000;
 const MARKET_CACHE_MS = 5 * 1000;
 const LIVE_CONTROL_KEY = "live_enabled";
+const FORCE_RESULT_KEY = "force_result";
 let marketCache = {
   data: null,
   time: 0
@@ -283,7 +284,7 @@ if (
             result_date DESC,
             id DESC
 
-          LIMIT 300
+          LIMIT 18
         `).all();
 
         return json({
@@ -312,6 +313,7 @@ if (
         }
 
         const body = await request.json();
+        const mode = body.mode === "now" ? "now" : "preset";
 
         const resultDate =
           cleanDate(body.result_date);
@@ -427,11 +429,26 @@ if (
           )
           .run();
 
+        if (mode === "now") {
+          const force = JSON.stringify({
+            result: result,
+            set_value: setValue,
+            market_value: marketValue,
+            updated_at: new Date().toISOString(),
+            expires_at: Date.now() + FINAL_SHOW_MS
+          });
+          await env.DB.prepare(`
+            INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+            ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value
+          `).bind(FORCE_RESULT_KEY, force).run();
+        }
+
         return json({
           ok: true,
 
-          message:
-            "Result သတ်မှတ်ပြီးပါပြီ",
+          message: mode === "now"
+            ? "ယခု Result ထုတ်ပြီးပါပြီ"
+            : "ကြိုသတ်မှတ်ပြီးပါပြီ",
 
           result_date:
             resultDate,
@@ -572,22 +589,18 @@ if (
 
         const body = await request.json();
         const id = Number(body.id);
+        const resultDate = cleanDate(body.result_date);
+        const roundTime = cleanRound(body.round_time);
 
-        if (!Number.isInteger(id)) {
-          return json(
-            {
-              ok: false,
-              error: "Invalid ID"
-            },
-            400
-          );
+        if (Number.isInteger(id)) {
+          await env.DB.prepare("DELETE FROM results WHERE id = ?").bind(id).run();
+        } else if (resultDate && roundTime) {
+          await env.DB.prepare(
+            "DELETE FROM results WHERE result_date = ? AND round_time = ?"
+          ).bind(resultDate, roundTime).run();
+        } else {
+          return json({ ok:false, error:"Date / Round Time မမှန်ပါ" }, 400);
         }
-
-        await env.DB.prepare(
-          "DELETE FROM results WHERE id = ?"
-        )
-          .bind(id)
-          .run();
 
         return json({
           ok: true,
@@ -846,8 +859,14 @@ async function getUserState(env) {
     savedByRound[row.round_time] = row;
   }
 
-  const liveEnabled =
+  const manualLiveEnabled =
     await getLiveEnabled(env);
+
+  // NIGHT 2D live schedule: 9:00 PM through 12:32 AM Yangon time.
+  const yd = yangonNow();
+  const mins = yd.getUTCHours() * 60 + yd.getUTCMinutes();
+  const inLiveHours = (mins >= 21 * 60) || (mins <= 32);
+  const liveEnabled = manualLiveEnabled && inLiveHours;
 
   let market = {
     set_value: "--",
@@ -923,6 +942,22 @@ async function getUserState(env) {
     }
   }
 
+  // At 1:00 AM Yangon, clear all six round boxes on the user page.
+  if (yd.getUTCHours() >= 1 && yd.getUTCHours() < 21) {
+    for (const round of ROUNDS) roundResults[round] = "--";
+  }
+
+  let forceResult = null;
+  try {
+    const forceRow = await env.DB.prepare(`
+      SELECT setting_value FROM settings WHERE setting_key = ?
+    `).bind(FORCE_RESULT_KEY).first();
+    if (forceRow && forceRow.setting_value) {
+      const parsed = JSON.parse(forceRow.setting_value);
+      if (Number(parsed.expires_at) > now) forceResult = parsed;
+    }
+  } catch (e) {}
+
   let mainResult =
     market.result || "--";
 
@@ -954,6 +989,19 @@ async function getUserState(env) {
 
     finalWindow =
       true;
+  }
+
+  if (forceResult) {
+    mainResult = forceResult.result || "--";
+    displaySet = forceResult.set_value || "--";
+    displayValue = forceResult.market_value || "--";
+    updatedAt = forceResult.updated_at || null;
+    finalWindow = true;
+  } else if (!liveEnabled && !activeFinal) {
+    mainResult = "--";
+    displaySet = "--";
+    displayValue = "--";
+    updatedAt = null;
   }
 
   return {
@@ -1376,12 +1424,12 @@ body{
 
 /* Main 2D: jump 3 times before showing a new result */
 .main-result.jump-before-change{
-  animation:mainResultJump .22s ease-in-out 3;
+  animation:mainResultJump .18s ease-in-out 1;
 }
 
 @keyframes mainResultJump{
-  0%,100%{ transform:translateY(0); }
-  50%{ transform:translateY(-14px); }
+  0%,100%{ transform:translateY(0) scale(1); }
+  50%{ transform:translateY(-12px) scale(1.04); }
 }
 
 .updated{
@@ -1647,12 +1695,6 @@ body{
   </span>
 </div>
 
-  <div
-    id="liveDate"
-    class="live-date">
-    🌙 --/--/----
-  </div>
-
   <div class="info">
 
     <div class="info-card">
@@ -1792,35 +1834,47 @@ function formatDate(){
 
 var lastMainResult = null;
 var mainResultAnimating = false;
+var pendingMainResult = null;
 
-function showMainResultWith3Jumps(nextResult){
+function random2D(){
+  return String(Math.floor(Math.random()*100)).padStart(2,"0");
+}
+
+function waitMs(ms){
+  return new Promise(function(resolve){ setTimeout(resolve,ms); });
+}
+
+async function showMainResultWith3Jumps(nextResult){
   var el = document.getElementById("mainResult");
   nextResult = nextResult || "--";
 
-  // First page load: show current value immediately.
   if(lastMainResult === null){
     lastMainResult = nextResult;
     el.textContent = nextResult;
     return;
   }
+  if(nextResult === lastMainResult) return;
+  if(mainResultAnimating){ pendingMainResult = nextResult; return; }
 
-  // No change, or an animation is already running.
-  if(nextResult === lastMainResult || mainResultAnimating){
-    return;
-  }
-
-  // Keep the OLD number visible while it jumps exactly 3 times.
   mainResultAnimating = true;
-  el.classList.remove("jump-before-change");
-  void el.offsetWidth;
-  el.classList.add("jump-before-change");
-
-  el.addEventListener("animationend", function finishJump(){
+  for(var i=0;i<3;i++){
+    var r = random2D();
+    if(r === nextResult) r = random2D();
+    el.textContent = r;
     el.classList.remove("jump-before-change");
-    el.textContent = nextResult;
-    lastMainResult = nextResult;
-    mainResultAnimating = false;
-  }, {once:true});
+    void el.offsetWidth;
+    el.classList.add("jump-before-change");
+    await waitMs(420);
+  }
+  el.classList.remove("jump-before-change");
+  el.textContent = nextResult;
+  lastMainResult = nextResult;
+  mainResultAnimating = false;
+
+  if(pendingMainResult && pendingMainResult !== lastMainResult){
+    var p = pendingMainResult; pendingMainResult = null;
+    showMainResultWith3Jumps(p);
+  }
 }
 
 async function loadLive(){
@@ -2522,16 +2576,7 @@ button{
     </p>
 
 
-    <h3>
-      Admin Result List
-    </h3>
-
-    <div
-      id="adminList"
-      class="admin-list"
-    >
-      Loading...
-    </div>
+    <div id="adminList" class="admin-list" style="display:none"></div>
 
   </div>
 
@@ -2834,7 +2879,19 @@ async function saveResult(mode="now"){
 
 // ======================================
 async function deletePreset(){
-  alert("ဖျက်ရန် Round ကိုရွေးပြီး Delete API ချိတ်ရန်လိုပါတယ်");
+  var date = document.getElementById("date").value;
+  var round = document.getElementById("round").value;
+  if(!date || !round){ notice("saveNotice","Date / Round ရွေးပါ",false); return; }
+  if(!confirm(date + " " + round + " ကြိုသတ်မှတ် Result ကို ဖျက်မလား?")) return;
+  try{
+    var res = await fetch("/api/admin/delete",{
+      method:"POST", headers:{"content-type":"application/json"},
+      body:JSON.stringify({result_date:date,round_time:round})
+    });
+    var data = await res.json();
+    notice("saveNotice",data.message || data.error || "Unknown",!!data.ok);
+    if(data.ok){ document.getElementById("result").value="--"; await loadAdminList(); await loadOldHistoryValues(); }
+  }catch(e){ notice("saveNotice","Delete Error",false); }
 }
 
 // SAVE OLD HISTORY - 6 ROUNDS

@@ -1424,12 +1424,11 @@ body{
 
 /* Main 2D: jump 3 times before showing a new result */
 .main-result.jump-before-change{
-  animation:mainResultJump .18s ease-in-out 1;
-}
+  animation:mainResultJump .45s ease-in-out;
 
 @keyframes mainResultJump{
   0%,100%{ transform:translateY(0) scale(1); }
-  50%{ transform:translateY(-6px) scale(1.02); }
+  50%{ transform:translateY(-8px) scale(1.03); }
 .updated{
   text-align:center;
   font-size:14px;

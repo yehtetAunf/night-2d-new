@@ -1429,6 +1429,8 @@ body{
 @keyframes mainResultJump{
   0%,100%{ transform:translateY(0) scale(1); }
   50%{ transform:translateY(-8px) scale(1.03); }
+}
+
 .updated{
   text-align:center;
   font-size:14px;

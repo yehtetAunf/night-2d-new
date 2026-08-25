@@ -273,24 +273,37 @@ if (
 
         const filterDate = cleanDate(url.searchParams.get("date"));
 
-        const rows = filterDate
-          ? await env.DB.prepare(`
-              SELECT id, result_date, round_time, result, updated_at
-              FROM results
-              WHERE result_date = ?
-              ORDER BY id DESC
-            `).bind(filterDate).all()
-          : await env.DB.prepare(`
-              SELECT id, result_date, round_time, result, updated_at
-              FROM results
-              ORDER BY result_date DESC, id DESC
-              LIMIT 18
-            `).all();
+      const rows = filterDate
+  ? await env.DB.prepare(`
+      SELECT id, result_date, round_time, result, set_value, market_value
+      FROM results
+      WHERE result_date = ?
+      ORDER BY id DESC
+    `).bind(filterDate).all()
+  : await env.DB.prepare(`
+      SELECT id, result_date, round_time, result, set_value, market_value
+      FROM results
+      ORDER BY result_date DESC, id DESC
+      LIMIT 18
+    `).all();
 
-        return json({
-          ok: true,
-          results: rows.results || []
-        });
+const cleanResults = [];
+const seen = new Set();
+
+for (const row of (rows.results || [])) {
+  const key = String(row.result_date) + "|" + String(row.round_time);
+
+  if (seen.has(key)) continue;
+
+  seen.add(key);
+  cleanResults.push(row);
+}
+
+return json({
+  ok: true,
+  results: cleanResults
+});
+    
       }
 
       // =========================

@@ -18,6 +18,13 @@ let marketCache = {
   time: 0
 };
 
+function currentSessionStartUtcSql() {
+  const sessionDate = getCurrentSessionDate();
+  const parts = sessionDate.split("-").map(Number);
+  const ms = Date.UTC(parts[0], parts[1] - 1, parts[2], 1, 0, 0) - (6.5 * 60 * 60 * 1000);
+  return new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+}
+
 async function ensurePresetTable(env) {
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS preset_results (
@@ -78,6 +85,16 @@ async function ensurePresetTable(env) {
       ON CONFLICT(setting_key) DO UPDATE SET setting_value = '1'
     `).bind(migrationKey).run();
   }
+
+  // Every new Yangon session starts at 1:00 AM. Presets saved before that
+  // belong to the previous session and must never appear in today's Admin boxes.
+  const sessionDate = getCurrentSessionDate();
+  const sessionStartUtc = currentSessionStartUtcSql();
+  await env.DB.prepare(`
+    DELETE FROM preset_results
+    WHERE result_date = ?
+      AND datetime(updated_at) < datetime(?)
+  `).bind(sessionDate, sessionStartUtc).run();
 }
 export default {
   async fetch(request, env) {

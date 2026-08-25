@@ -3201,18 +3201,9 @@ async function loadOldHistoryValues(){
     return;
   }
 
-  // Add Old History must not show today's/future preset results.
-  // Only past dates may load saved history into these 6 boxes.
-  var todayYangon = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Yangon",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date());
-
-  if(date >= todayYangon){
-    return;
-  }
+  // Admin-only view: allow Add Old History to load saved/preset results
+  // for the selected date, including today/future dates.
+  // Public user/history APIs still enforce publish time separately.
 
   try{
     var res = await fetch(

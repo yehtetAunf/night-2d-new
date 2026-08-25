@@ -1915,26 +1915,25 @@ async function loadLive(){
 
 }else{
 
-    mainResultAnimationToken++;
-    mainResultAnimating = false;
-    pendingMainResult = null;
-
     var mainEl =
         document.getElementById("mainResult");
 
     var liveResult =
         data.main_result || "--";
 
-  mainEl.classList.remove(
-    "jump-before-change"
-  );
+    if(!mainResultAnimating){
 
-  mainEl.textContent =
-    liveResult;
+        mainEl.classList.remove(
+          "jump-before-change"
+        );
 
-  lastMainResult =
-    liveResult;
-      }
+        mainEl.textContent =
+          liveResult;
+
+        lastMainResult =
+          liveResult;
+    }
+}
 
     document
       .getElementById(

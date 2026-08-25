@@ -1855,7 +1855,7 @@ async function showMainResultWith3Jumps(nextResult){
   if(mainResultAnimating){ pendingMainResult = nextResult; return; }
 
   mainResultAnimating = true;
-  for(var i=0;i<4;i++){
+  for(var i=0;i<3;i++){
 
   el.textContent = "";
 

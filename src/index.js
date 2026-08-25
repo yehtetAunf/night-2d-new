@@ -42,8 +42,7 @@ export default {
       // ADMIN PAGE
       // =========================
       if (path === "/admin" && request.method === "GET") {
-        // Opening the public Admin link must always show the password page.
-        // Only the post-login panel URL may render the dashboard.
+        // Plain /admin always opens the password page.
         if (url.searchParams.get("panel") !== "1" || !isAdmin(request)) {
           return html(adminLoginPage());
         }
@@ -272,22 +271,21 @@ if (
           );
         }
 
-        const rows = await env.DB.prepare(`
-          SELECT
-            id,
-            result_date,
-            round_time,
-            result,
-            updated_at
+        const filterDate = cleanDate(url.searchParams.get("date"));
 
-          FROM results
-
-          ORDER BY
-            result_date DESC,
-            id DESC
-
-          LIMIT 18
-        `).all();
+        const rows = filterDate
+          ? await env.DB.prepare(`
+              SELECT id, result_date, round_time, result, updated_at
+              FROM results
+              WHERE result_date = ?
+              ORDER BY id DESC
+            `).bind(filterDate).all()
+          : await env.DB.prepare(`
+              SELECT id, result_date, round_time, result, updated_at
+              FROM results
+              ORDER BY result_date DESC, id DESC
+              LIMIT 18
+            `).all();
 
         return json({
           ok: true,
@@ -944,12 +942,8 @@ async function getUserState(env) {
     }
   }
 
-  // New-day reset window: 1:00 AM through 8:59 PM Yangon.
-  // During this period the User App must show -- for all live/result numbers.
-  const userDayReset =
-    yd.getUTCHours() >= 1 && yd.getUTCHours() < 21;
-
-  if (userDayReset) {
+  // At 1:00 AM Yangon, clear all six round boxes on the user page.
+  if (yd.getUTCHours() >= 1 && yd.getUTCHours() < 21) {
     for (const round of ROUNDS) roundResults[round] = "--";
   }
 
@@ -1008,16 +1002,6 @@ async function getUserState(env) {
     displaySet = "--";
     displayValue = "--";
     updatedAt = null;
-  }
-
-  // A new daytime session starts blank on the User App.
-  // Admin data remains stored in D1 and is not deleted.
-  if (userDayReset) {
-    mainResult = "--";
-    displaySet = "--";
-    displayValue = "--";
-    updatedAt = null;
-    finalWindow = false;
   }
 
   return {
@@ -1349,14 +1333,13 @@ viewport-fit=cover
 *{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent;
+}
+
+.app,
+.app *{
   -webkit-user-select:none;
   user-select:none;
   -webkit-touch-callout:none;
-}
-
-img, a {
-  -webkit-user-drag:none;
-  user-drag:none;
 }
 
 html,
@@ -1777,22 +1760,15 @@ body{
 
 <script>
 
-// User App copy/select protection
+const ROUNDS =
+${JSON.stringify(ROUNDS)};
+
+
 document.addEventListener("copy", function(e){ e.preventDefault(); });
 document.addEventListener("cut", function(e){ e.preventDefault(); });
 document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
 document.addEventListener("selectstart", function(e){ e.preventDefault(); });
 document.addEventListener("dragstart", function(e){ e.preventDefault(); });
-document.addEventListener("keydown", function(e){
-  var key = String(e.key || "").toLowerCase();
-  if ((e.ctrlKey || e.metaKey) && (key === "c" || key === "a" || key === "x")) {
-    e.preventDefault();
-  }
-});
-
-const ROUNDS =
-${JSON.stringify(ROUNDS)};
-
 
 function roundId(round){
 
@@ -3209,13 +3185,6 @@ async function loadAdminList(){
 
 async function loadOldHistoryValues(){
 
-  if(
-    !adminResults.length
-  ){
-    await loadAdminList();
-  }
-
-
   var date =
     document
       .getElementById(
@@ -3223,46 +3192,38 @@ async function loadOldHistoryValues(){
       )
       .value;
 
-
-  for(
-    var i = 0;
-    i < ROUNDS.length;
-    i++
-  ){
-
-    var input =
-      document
-        .getElementById(
-          "old_" + i
-        );
-
-
-    input.value = "";
-
-
-    var found =
-      adminResults.find(
-        function(r){
-
-          return (
-            r.result_date === date &&
-            r.round_time === ROUNDS[i]
-          );
-
-        }
-      );
-
-
-    if(found){
-
-      input.value =
-        found.result || "";
-
-    }
-
+  // Date changes must never reuse results from another day.
+  for(var i = 0; i < ROUNDS.length; i++){
+    document.getElementById("old_" + i).value = "";
   }
 
+  if(!date){
+    return;
+  }
+
+  try{
+    var res = await fetch(
+      "/api/admin/list?date=" + encodeURIComponent(date) + "&t=" + Date.now(),
+      { cache:"no-store" }
+    );
+
+    var data = await res.json();
+    var dayResults = data.results || [];
+
+    for(var i = 0; i < ROUNDS.length; i++){
+      var found = dayResults.find(function(r){
+        return r.result_date === date && r.round_time === ROUNDS[i];
+      });
+
+      if(found){
+        document.getElementById("old_" + i).value = found.result || "";
+      }
+    }
+  }catch(e){
+    notice("historyNotice", "History Load Error", false);
+  }
 }
+
 
 
 // ======================================
@@ -3639,13 +3600,6 @@ content="width=device-width,initial-scale=1,viewport-fit=cover"
 <style>
 
 *{
-  -webkit-user-select:none;
-  user-select:none;
-  -webkit-touch-callout:none;
-}
-
-
-*{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent;
 }
@@ -3841,13 +3795,6 @@ body{
 
 
 <script>
-
-document.addEventListener("copy", function(e){ e.preventDefault(); });
-document.addEventListener("cut", function(e){ e.preventDefault(); });
-document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
-document.addEventListener("selectstart", function(e){ e.preventDefault(); });
-document.addEventListener("dragstart", function(e){ e.preventDefault(); });
-
 
 const ROUNDS =
 ${JSON.stringify(ROUNDS)};

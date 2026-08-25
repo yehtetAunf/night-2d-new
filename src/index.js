@@ -1902,9 +1902,30 @@ async function loadLive(){
       return;
     }
 
-    showMainResultWith3Jumps(
-      data.main_result || "--"
-    );
+    if(data.final_window === true){
+
+  showMainResultWith3Jumps(
+    data.main_result || "--"
+  );
+
+}else{
+
+  var mainEl =
+    document.getElementById("mainResult");
+
+  var liveResult =
+    data.main_result || "--";
+
+  mainEl.classList.remove(
+    "jump-before-change"
+  );
+
+  mainEl.textContent =
+    liveResult;
+
+  lastMainResult =
+    liveResult;
+      }
 
     document
       .getElementById(

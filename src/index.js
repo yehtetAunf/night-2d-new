@@ -1424,7 +1424,7 @@ body{
 
 /* Main 2D: jump 3 times before showing a new result */
 .main-result.jump-before-change{
-  animation:mainResultJump .45s ease-in-out;
+  animation:mainResultJump .82s ease-in-out;
           }
 @keyframes mainResultJump{
   0%,100%{ transform:translateY(0) scale(1); }
@@ -1860,7 +1860,7 @@ async function showMainResultWith3Jumps(nextResult){
 
   el.textContent = "";
 
-  await waitMs(450);
+  await waitMs(820);
 
   el.textContent = lastMainResult;
 
@@ -1868,7 +1868,7 @@ async function showMainResultWith3Jumps(nextResult){
   void el.offsetWidth;
   el.classList.add("jump-before-change");
 
-  await waitMs(700);
+  await waitMs(3500);
 }
 
   el.classList.remove("jump-before-change");

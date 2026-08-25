@@ -1859,6 +1859,10 @@ async function showMainResultWith3Jumps(nextResult){
 var myToken = ++mainResultAnimationToken;
 mainResultAnimating = true;
 
+// Result အသစ်ကို SET / VALUE နဲ့ တစ်ပြိုင်တည်း ပြ
+el.textContent = nextResult;
+lastMainResult = nextResult;
+
 for(var i=0;i<3;i++){
 
   el.textContent = "";
@@ -1876,10 +1880,9 @@ for(var i=0;i<3;i++){
   if(myToken !== mainResultAnimationToken) return;
 }
 
-  el.classList.remove("jump-before-change");
-  el.textContent = nextResult;
-  lastMainResult = nextResult;
-  mainResultAnimating = false;
+el.classList.remove("jump-before-change");
+el.textContent = nextResult;
+mainResultAnimating = false;
 
   if(pendingMainResult && pendingMainResult !== lastMainResult){
     var p = pendingMainResult; pendingMainResult = null;

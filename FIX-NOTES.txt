@@ -1,0 +1,9 @@
+NIGHT 2D LIVE + MONACO ANIMATION FIX
+
+Fixed:
+1. Admin LIVE ON now actually turns live market display ON immediately.
+2. Removed the hidden 9:00 PM–12:32 AM gate that caused SET / VALUE / Main 2D to stay -- even while Admin showed LIVE ON.
+3. Existing Monaco-style 3-jump Main 2D animation is retained.
+4. Existing round publishing, final-result window, history and admin controls are retained.
+
+Deploy this project to Cloudflare Worker as before.

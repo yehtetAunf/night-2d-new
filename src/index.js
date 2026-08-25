@@ -1866,7 +1866,7 @@ for(var i=0;i<3;i++){
   await waitMs(820);
   if(myToken !== mainResultAnimationToken) return;
 
-  el.textContent = lastMainResult;
+  el.textContent = nextResult;
 
   el.classList.remove("jump-before-change");
   void el.offsetWidth;

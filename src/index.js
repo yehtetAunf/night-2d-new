@@ -1872,7 +1872,7 @@ for(var i=0;i<3;i++){
   void el.offsetWidth;
   el.classList.add("jump-before-change");
 
-  await waitMs(3500);
+  await waitMs(700);
   if(myToken !== mainResultAnimationToken) return;
 }
 

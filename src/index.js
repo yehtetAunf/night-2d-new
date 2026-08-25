@@ -1857,7 +1857,11 @@ async function showMainResultWith3Jumps(nextResult){
   if(mainResultAnimating){ pendingMainResult = nextResult; return; }
 
   mainResultAnimating = true;
-  for(var i=0;i<3;i++){
+  for(var i=0;i<4;i++){
+
+  el.textContent = "";
+
+  await waitMs(180);
 
   el.textContent = lastMainResult;
 
@@ -1865,8 +1869,9 @@ async function showMainResultWith3Jumps(nextResult){
   void el.offsetWidth;
   el.classList.add("jump-before-change");
 
-  await waitMs(420);
+  await waitMs(500);
 }
+
   el.classList.remove("jump-before-change");
   el.textContent = nextResult;
   lastMainResult = nextResult;

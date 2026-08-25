@@ -1856,12 +1856,15 @@ async function showMainResultWith3Jumps(nextResult){
   if(nextResult === lastMainResult) return;
   if(mainResultAnimating){ pendingMainResult = nextResult; return; }
 
-  mainResultAnimating = true;
-  for(var i=0;i<3;i++){
+var myToken = ++mainResultAnimationToken;
+mainResultAnimating = true;
+
+for(var i=0;i<3;i++){
 
   el.textContent = "";
 
   await waitMs(820);
+  if(myToken !== mainResultAnimationToken) return;
 
   el.textContent = lastMainResult;
 
@@ -1870,6 +1873,7 @@ async function showMainResultWith3Jumps(nextResult){
   el.classList.add("jump-before-change");
 
   await waitMs(3500);
+  if(myToken !== mainResultAnimationToken) return;
 }
 
   el.classList.remove("jump-before-change");

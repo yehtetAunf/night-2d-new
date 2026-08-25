@@ -862,11 +862,11 @@ async function getUserState(env) {
   const manualLiveEnabled =
     await getLiveEnabled(env);
 
-  // NIGHT 2D live schedule: 9:00 PM through 12:32 AM Yangon time.
+  // Admin LIVE Control is the master switch.
+  // When Admin says LIVE ON, live market data must display immediately
+  // (do not block it just because the current time is outside the round window).
   const yd = yangonNow();
-  const mins = yd.getUTCHours() * 60 + yd.getUTCMinutes();
-  const inLiveHours = (mins >= 21 * 60) || (mins <= 32);
-  const liveEnabled = manualLiveEnabled && inLiveHours;
+  const liveEnabled = manualLiveEnabled;
 
   let market = {
     set_value: "--",

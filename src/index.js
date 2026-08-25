@@ -27,7 +27,7 @@ export default {
       // =========================
       // USER PAGE
       // =========================
-      if (path === "/" && request.method === "GET") {
+      if ((path === "/" || path === "/user") && request.method === "GET") {
         return html(userPage());
       }
 
@@ -42,7 +42,9 @@ export default {
       // ADMIN PAGE
       // =========================
       if (path === "/admin" && request.method === "GET") {
-        if (!isAdmin(request)) {
+        // Opening the public Admin link must always show the password page.
+        // Only the post-login panel URL may render the dashboard.
+        if (url.searchParams.get("panel") !== "1" || !isAdmin(request)) {
           return html(adminLoginPage());
         }
 
@@ -83,7 +85,7 @@ export default {
         return new Response(null, {
           status: 302,
           headers: {
-            Location: "/admin",
+            Location: "/admin?panel=1",
 
             "Set-Cookie":
               COOKIE_NAME +
@@ -942,8 +944,12 @@ async function getUserState(env) {
     }
   }
 
-  // At 1:00 AM Yangon, clear all six round boxes on the user page.
-  if (yd.getUTCHours() >= 1 && yd.getUTCHours() < 21) {
+  // New-day reset window: 1:00 AM through 8:59 PM Yangon.
+  // During this period the User App must show -- for all live/result numbers.
+  const userDayReset =
+    yd.getUTCHours() >= 1 && yd.getUTCHours() < 21;
+
+  if (userDayReset) {
     for (const round of ROUNDS) roundResults[round] = "--";
   }
 
@@ -1002,6 +1008,16 @@ async function getUserState(env) {
     displaySet = "--";
     displayValue = "--";
     updatedAt = null;
+  }
+
+  // A new daytime session starts blank on the User App.
+  // Admin data remains stored in D1 and is not deleted.
+  if (userDayReset) {
+    mainResult = "--";
+    displaySet = "--";
+    displayValue = "--";
+    updatedAt = null;
+    finalWindow = false;
   }
 
   return {
@@ -1333,6 +1349,14 @@ viewport-fit=cover
 *{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+
+img, a {
+  -webkit-user-drag:none;
+  user-drag:none;
 }
 
 html,
@@ -1752,6 +1776,19 @@ body{
 </div>
 
 <script>
+
+// User App copy/select protection
+document.addEventListener("copy", function(e){ e.preventDefault(); });
+document.addEventListener("cut", function(e){ e.preventDefault(); });
+document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+document.addEventListener("selectstart", function(e){ e.preventDefault(); });
+document.addEventListener("dragstart", function(e){ e.preventDefault(); });
+document.addEventListener("keydown", function(e){
+  var key = String(e.key || "").toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && (key === "c" || key === "a" || key === "x")) {
+    e.preventDefault();
+  }
+});
 
 const ROUNDS =
 ${JSON.stringify(ROUNDS)};
@@ -3602,6 +3639,13 @@ content="width=device-width,initial-scale=1,viewport-fit=cover"
 <style>
 
 *{
+  -webkit-user-select:none;
+  user-select:none;
+  -webkit-touch-callout:none;
+}
+
+
+*{
   box-sizing:border-box;
   -webkit-tap-highlight-color:transparent;
 }
@@ -3797,6 +3841,13 @@ body{
 
 
 <script>
+
+document.addEventListener("copy", function(e){ e.preventDefault(); });
+document.addEventListener("cut", function(e){ e.preventDefault(); });
+document.addEventListener("contextmenu", function(e){ e.preventDefault(); });
+document.addEventListener("selectstart", function(e){ e.preventDefault(); });
+document.addEventListener("dragstart", function(e){ e.preventDefault(); });
+
 
 const ROUNDS =
 ${JSON.stringify(ROUNDS)};

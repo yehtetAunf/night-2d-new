@@ -1834,6 +1834,7 @@ function formatDate(){
 var lastMainResult = null;
 var mainResultAnimating = false;
 var pendingMainResult = null;
+var mainResultAnimationToken = 0;
 
 function random2D(){
   return String(Math.floor(Math.random()*100)).padStart(2,"0");

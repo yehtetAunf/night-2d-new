@@ -1854,8 +1854,11 @@ async function showMainResultWith3Jumps(nextResult){
     return;
   }
   if(nextResult === lastMainResult) return;
-  if(mainResultAnimating){ pendingMainResult = nextResult; return; }
-
+  if(mainResultAnimating){
+  mainResultAnimationToken++;
+  mainResultAnimating = false;
+  pendingMainResult = null;
+}
 var myToken = ++mainResultAnimationToken;
 mainResultAnimating = true;
 

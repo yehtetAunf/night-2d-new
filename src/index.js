@@ -1907,33 +1907,9 @@ async function loadLive(){
       return;
     }
 
-    if(data.final_window === true){
-
-  showMainResultWith3Jumps(
-    data.main_result || "--"
-  );
-
-}else{
-
-    var mainEl =
-        document.getElementById("mainResult");
-
-    var liveResult =
-        data.main_result || "--";
-
-    if(!mainResultAnimating){
-
-        mainEl.classList.remove(
-          "jump-before-change"
-        );
-
-        mainEl.textContent =
-          liveResult;
-
-        lastMainResult =
-          liveResult;
-    }
-}
+    showMainResultWith3Jumps(
+  data.main_result || "--"
+);
 
     document
       .getElementById(

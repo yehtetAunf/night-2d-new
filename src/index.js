@@ -1861,7 +1861,7 @@ async function showMainResultWith3Jumps(nextResult){
 
   el.textContent = "";
 
-  await waitMs(180);
+  await waitMs(450);
 
   el.textContent = lastMainResult;
 
@@ -1869,7 +1869,7 @@ async function showMainResultWith3Jumps(nextResult){
   void el.offsetWidth;
   el.classList.add("jump-before-change");
 
-  await waitMs(500);
+  await waitMs(700);
 }
 
   el.classList.remove("jump-before-change");

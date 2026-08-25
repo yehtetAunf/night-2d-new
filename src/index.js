@@ -1858,14 +1858,15 @@ async function showMainResultWith3Jumps(nextResult){
 
   mainResultAnimating = true;
   for(var i=0;i<3;i++){
-    var r = random2D();
-    if(r === nextResult) r = random2D();
-    el.textContent = r;
-    el.classList.remove("jump-before-change");
-    void el.offsetWidth;
-    el.classList.add("jump-before-change");
-    await waitMs(420);
-  }
+
+  el.textContent = lastMainResult;
+
+  el.classList.remove("jump-before-change");
+  void el.offsetWidth;
+  el.classList.add("jump-before-change");
+
+  await waitMs(420);
+}
   el.classList.remove("jump-before-change");
   el.textContent = nextResult;
   lastMainResult = nextResult;

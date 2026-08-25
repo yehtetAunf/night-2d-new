@@ -1368,7 +1368,7 @@ body{
   width:100%;
   max-width:720px;
   margin:0 auto;
-  padding:18px 18px 22px;
+  padding:45px 18px 22px;
 }
 
 .header{

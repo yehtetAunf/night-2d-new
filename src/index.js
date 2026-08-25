@@ -17,6 +17,68 @@ let marketCache = {
   data: null,
   time: 0
 };
+
+async function ensurePresetTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS preset_results (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      result_date TEXT NOT NULL,
+      round_time TEXT NOT NULL,
+      result TEXT NOT NULL,
+      set_value TEXT,
+      market_value TEXT,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(result_date, round_time)
+    )
+  `).run();
+
+  // One-time migration for the old version, where presets were stored in results.
+  // Only rows whose round time has NOT arrived yet are moved, so published history stays intact.
+  const migrationKey = "preset_split_migrated_v1";
+  const done = await env.DB.prepare(`
+    SELECT setting_value FROM settings WHERE setting_key = ?
+  `).bind(migrationKey).first();
+
+  if (!done || done.setting_value !== "1") {
+    const legacy = await env.DB.prepare(`
+      SELECT id, result_date, round_time, result, set_value, market_value, updated_at
+      FROM results
+      ORDER BY id ASC
+    `).all();
+
+    const now = Date.now();
+
+    for (const row of (legacy.results || [])) {
+      if (roundPublishTime(row.result_date, row.round_time) > now) {
+        await env.DB.prepare(`
+          INSERT INTO preset_results
+          (result_date, round_time, result, set_value, market_value, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(result_date, round_time)
+          DO UPDATE SET
+            result = excluded.result,
+            set_value = excluded.set_value,
+            market_value = excluded.market_value,
+            updated_at = excluded.updated_at
+        `).bind(
+          row.result_date,
+          row.round_time,
+          row.result,
+          row.set_value,
+          row.market_value,
+          row.updated_at || new Date().toISOString()
+        ).run();
+
+        await env.DB.prepare(`DELETE FROM results WHERE id = ?`).bind(row.id).run();
+      }
+    }
+
+    await env.DB.prepare(`
+      INSERT INTO settings (setting_key, setting_value) VALUES (?, '1')
+      ON CONFLICT(setting_key) DO UPDATE SET setting_value = '1'
+    `).bind(migrationKey).run();
+  }
+}
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -213,45 +275,84 @@ if (
 
       // =========================
       // HISTORY API
+      // Published results only. Presets become visible only after round time.
       // =========================
       if (
         path === "/api/history" &&
         request.method === "GET"
       ) {
-        const rows = await env.DB.prepare(`
-          SELECT
-            id,
-            result_date,
-            round_time,
-            result,
-            set_value,
-            market_value,
-            updated_at
+        await ensurePresetTable(env);
 
+        const resultRows = await env.DB.prepare(`
+          SELECT id, result_date, round_time, result, set_value, market_value, updated_at
           FROM results
+          ORDER BY result_date DESC, id DESC
+          LIMIT 300
+        `).all();
 
-          ORDER BY
-            result_date DESC,
-            id DESC
-
+        const presetRows = await env.DB.prepare(`
+          SELECT id, result_date, round_time, result, set_value, market_value, updated_at
+          FROM preset_results
+          ORDER BY result_date DESC, id DESC
           LIMIT 300
         `).all();
 
         const now = Date.now();
+        const merged = new Map();
 
-        const visible =
-          (rows.results || []).filter(
-            function(row) {
-              return (
-                roundPublishTime(
-                  row.result_date,
-                  row.round_time
-                ) <= now
-              );
-            }
-          );
+        // Preset is allowed into public history only after its publish time.
+        for (const row of (presetRows.results || [])) {
+          if (roundPublishTime(row.result_date, row.round_time) <= now) {
+            merged.set(row.result_date + "|" + row.round_time, row);
+          }
+        }
+
+        // A real/manual result always overrides the preset for the same date + round.
+        for (const row of (resultRows.results || [])) {
+          if (roundPublishTime(row.result_date, row.round_time) <= now) {
+            merged.set(row.result_date + "|" + row.round_time, row);
+          }
+        }
+
+        const visible = Array.from(merged.values())
+          .sort((a, b) => {
+            if (a.result_date !== b.result_date) return b.result_date.localeCompare(a.result_date);
+            return (b.id || 0) - (a.id || 0);
+          })
+          .slice(0, 300);
 
         return json(visible);
+      }
+
+      // =========================
+      // ADMIN PRESET LIST (admin only)
+      // =========================
+      if (
+        path === "/api/admin/presets" &&
+        request.method === "GET"
+      ) {
+        if (!isAdmin(request)) {
+          return json({ ok: false, error: "Unauthorized" }, 401);
+        }
+
+        await ensurePresetTable(env);
+        const filterDate = cleanDate(url.searchParams.get("date"));
+
+        const rows = filterDate
+          ? await env.DB.prepare(`
+              SELECT id, result_date, round_time, result, set_value, market_value, updated_at
+              FROM preset_results
+              WHERE result_date = ?
+              ORDER BY id DESC
+            `).bind(filterDate).all()
+          : await env.DB.prepare(`
+              SELECT id, result_date, round_time, result, set_value, market_value, updated_at
+              FROM preset_results
+              ORDER BY result_date DESC, id DESC
+              LIMIT 18
+            `).all();
+
+        return json({ ok: true, results: rows.results || [] });
       }
 
       // =========================
@@ -273,37 +374,24 @@ if (
 
         const filterDate = cleanDate(url.searchParams.get("date"));
 
-      const rows = filterDate
-  ? await env.DB.prepare(`
-      SELECT id, result_date, round_time, result, set_value, market_value
-      FROM results
-      WHERE result_date = ?
-      ORDER BY id DESC
-    `).bind(filterDate).all()
-  : await env.DB.prepare(`
-      SELECT id, result_date, round_time, result, set_value, market_value
-      FROM results
-      ORDER BY result_date DESC, id DESC
-      LIMIT 18
-    `).all();
+        const rows = filterDate
+          ? await env.DB.prepare(`
+              SELECT id, result_date, round_time, result, updated_at
+              FROM results
+              WHERE result_date = ?
+              ORDER BY id DESC
+            `).bind(filterDate).all()
+          : await env.DB.prepare(`
+              SELECT id, result_date, round_time, result, updated_at
+              FROM results
+              ORDER BY result_date DESC, id DESC
+              LIMIT 18
+            `).all();
 
-const cleanResults = [];
-const seen = new Set();
-
-for (const row of (rows.results || [])) {
-  const key = String(row.result_date) + "|" + String(row.round_time);
-
-  if (seen.has(key)) continue;
-
-  seen.add(key);
-  cleanResults.push(row);
-}
-
-return json({
-  ok: true,
-  results: cleanResults
-});
-    
+        return json({
+          ok: true,
+          results: rows.results || []
+        });
       }
 
       // =========================
@@ -400,47 +488,45 @@ return json({
           );
         }
 
-        await env.DB.prepare(`
-          INSERT INTO results
-          (
-            result_date,
-            round_time,
-            result,
-            set_value,
-            market_value,
-            updated_at
-          )
+        await ensurePresetTable(env);
 
-          VALUES
-          (?, ?, ?, ?, ?, datetime('now'))
-
-          ON CONFLICT(
-            result_date,
-            round_time
-          )
-
-          DO UPDATE SET
-
-            result =
-              excluded.result,
-
-            set_value =
-              excluded.set_value,
-
-            market_value =
-              excluded.market_value,
-
-            updated_at =
-              datetime('now')
-        `)
-          .bind(
+        if (mode === "preset") {
+          await env.DB.prepare(`
+            INSERT INTO preset_results
+            (result_date, round_time, result, set_value, market_value, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(result_date, round_time)
+            DO UPDATE SET
+              result = excluded.result,
+              set_value = excluded.set_value,
+              market_value = excluded.market_value,
+              updated_at = datetime('now')
+          `).bind(
             resultDate,
             roundTime,
             result,
             setValue,
             marketValue
-          )
-          .run();
+          ).run();
+        } else {
+          await env.DB.prepare(`
+            INSERT INTO results
+            (result_date, round_time, result, set_value, market_value, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(result_date, round_time)
+            DO UPDATE SET
+              result = excluded.result,
+              set_value = excluded.set_value,
+              market_value = excluded.market_value,
+              updated_at = datetime('now')
+          `).bind(
+            resultDate,
+            roundTime,
+            result,
+            setValue,
+            marketValue
+          ).run();
+        }
 
         if (mode === "now") {
           const force = JSON.stringify({
@@ -608,8 +694,9 @@ return json({
         if (Number.isInteger(id)) {
           await env.DB.prepare("DELETE FROM results WHERE id = ?").bind(id).run();
         } else if (resultDate && roundTime) {
+          await ensurePresetTable(env);
           await env.DB.prepare(
-            "DELETE FROM results WHERE result_date = ? AND round_time = ?"
+            "DELETE FROM preset_results WHERE result_date = ? AND round_time = ?"
           ).bind(resultDate, roundTime).run();
         } else {
           return json({ ok:false, error:"Date / Round Time မမှန်ပါ" }, 400);
@@ -863,13 +950,26 @@ async function getUserState(env) {
     .bind(sessionDate)
     .all();
 
-  const saved =
-    rows.results || [];
+  await ensurePresetTable(env);
+
+  const presetRows = await env.DB.prepare(`
+    SELECT id, result_date, round_time, result, set_value, market_value, updated_at
+    FROM preset_results
+    WHERE result_date = ?
+  `).bind(sessionDate).all();
+
+  const saved = rows.results || [];
+  const presets = presetRows.results || [];
 
   const savedByRound = {};
+  const presetByRound = {};
 
   for (const row of saved) {
     savedByRound[row.round_time] = row;
+  }
+
+  for (const row of presets) {
+    presetByRound[row.round_time] = row;
   }
 
   const manualLiveEnabled =
@@ -916,7 +1016,7 @@ async function getUserState(env) {
       );
 
     const preset =
-      savedByRound[round];
+      savedByRound[round] || presetByRound[round];
 
     if (now < publishTime) {
       roundResults[round] = "--";
@@ -3214,13 +3314,22 @@ async function loadOldHistoryValues(){
     return;
   }
 
-  // Admin-only view: allow Add Old History to load saved/preset results
-  // for the selected date, including today/future dates.
-  // Public user/history APIs still enforce publish time separately.
+  var todayYangon = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Yangon",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date());
 
   try{
+    // Today/future: show ONLY admin presets.
+    // Past dates: show actual saved history.
+    var endpoint = date >= todayYangon
+      ? "/api/admin/presets?date="
+      : "/api/admin/list?date=";
+
     var res = await fetch(
-      "/api/admin/list?date=" + encodeURIComponent(date) + "&t=" + Date.now(),
+      endpoint + encodeURIComponent(date) + "&t=" + Date.now(),
       { cache:"no-store" }
     );
 

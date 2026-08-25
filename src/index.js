@@ -1422,7 +1422,7 @@ body{
   line-height:.9;
   text-align:center;
   letter-spacing:-5px;
-  margin-top:60px;
+  margin-top:28px;
   height:110px;
   display:flex;
   align-items:center;

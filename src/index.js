@@ -1915,11 +1915,15 @@ async function loadLive(){
 
 }else{
 
-  var mainEl =
-    document.getElementById("mainResult");
+    mainResultAnimationToken++;
+    mainResultAnimating = false;
+    pendingMainResult = null;
 
-  var liveResult =
-    data.main_result || "--";
+    var mainEl =
+        document.getElementById("mainResult");
+
+    var liveResult =
+        data.main_result || "--";
 
   mainEl.classList.remove(
     "jump-before-change"

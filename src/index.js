@@ -8,7 +8,6 @@ const ROUNDS = [
 ];
 
 const COOKIE_NAME = "night2d_admin";
-const ADMIN_HASH_KEY = "admin_password_hash_v1";
 const COINBASE_PRODUCT = "BTC-USD";
 const FINAL_SHOW_MS = 2 * 60 * 1000;
 const MARKET_CACHE_MS = 5 * 1000;
@@ -123,12 +122,11 @@ export default {
       // =========================
       if (path === "/admin" && request.method === "GET") {
         // Plain /admin always opens the password page.
-        const role = await getSessionRole(request, env);
-        if (url.searchParams.get("panel") !== "1" || !role) {
+        if (url.searchParams.get("panel") !== "1" || !isAdmin(request)) {
           return html(adminLoginPage());
         }
 
-        return html(adminPage(role));
+        return html(adminPage());
       }
 
       // =========================
@@ -142,50 +140,37 @@ export default {
         const password =
           String(form.get("password") || "");
 
-        let role = null;
-        if (env.OWNER_PASSWORD && password === env.OWNER_PASSWORD) {
-          role = "owner";
-        } else if (await verifyAdminPassword(env, password)) {
-          role = "admin";
+        if (!env.ADMIN_PASSWORD) {
+          return html(
+            messagePage(
+              "ADMIN_PASSWORD မသတ်မှတ်ရသေးပါ",
+              "/admin"
+            ),
+            500
+          );
         }
 
-        if (!role) {
-          return html(messagePage("Password မှားနေပါတယ်", "/admin"), 401);
+        if (password !== env.ADMIN_PASSWORD) {
+          return html(
+            messagePage(
+              "Admin Password မှားနေပါတယ်",
+              "/admin"
+            ),
+            401
+          );
         }
 
-        const session = await makeSessionCookie(role, env);
         return new Response(null, {
           status: 302,
           headers: {
             Location: "/admin?panel=1",
-            "Set-Cookie": COOKIE_NAME + "=" + session + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=2592000"
+
+            "Set-Cookie":
+              COOKIE_NAME +
+              "=yes; Path=/; HttpOnly; Secure;" +
+              " SameSite=Lax; Max-Age=2592000"
           }
         });
-      }
-
-      // =========================
-      // PASSWORD MANAGEMENT
-      // =========================
-      if (path === "/api/admin/change-password" && request.method === "POST") {
-        const role = await getSessionRole(request, env);
-        if (role !== "admin") return json({ok:false,error:"Admin only"}, 403);
-        const body = await request.json();
-        const current = String(body.current_password || "");
-        const next = String(body.new_password || "");
-        if (!(await verifyAdminPassword(env, current))) return json({ok:false,error:"Current password မှားနေပါတယ်"}, 400);
-        if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
-        await setAdminPassword(env, next);
-        return json({ok:true});
-      }
-
-      if (path === "/api/owner/reset-admin-password" && request.method === "POST") {
-        const role = await getSessionRole(request, env);
-        if (role !== "owner") return json({ok:false,error:"Owner only"}, 403);
-        const body = await request.json();
-        const next = String(body.new_password || "");
-        if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
-        await setAdminPassword(env, next);
-        return json({ok:true});
       }
 
       // =========================
@@ -221,7 +206,7 @@ if (
   path === "/api/admin/live-status" &&
   request.method === "GET"
 ) {
-  if (!(await getSessionRole(request, env))) {
+  if (!isAdmin(request)) {
     return json(
       {
         ok: false,
@@ -254,7 +239,7 @@ if (
         path === "/api/admin/live-control" &&
         request.method === "POST"
       ) {
-        if (!(await getSessionRole(request, env))) {
+        if (!isAdmin(request)) {
           return json(
             {
               ok: false,
@@ -363,7 +348,7 @@ if (
         path === "/api/admin/presets" &&
         request.method === "GET"
       ) {
-        if (!(await getSessionRole(request, env))) {
+        if (!isAdmin(request)) {
           return json({ ok: false, error: "Unauthorized" }, 401);
         }
 
@@ -394,7 +379,7 @@ if (
         path === "/api/admin/list" &&
         request.method === "GET"
       ) {
-        if (!(await getSessionRole(request, env))) {
+        if (!isAdmin(request)) {
           return json(
             {
               ok: false,
@@ -435,7 +420,7 @@ if (
         path === "/api/admin/save" &&
         request.method === "POST"
       ) {
-        if (!(await getSessionRole(request, env))) {
+        if (!isAdmin(request)) {
           return json(
             {
               ok: false,
@@ -608,7 +593,7 @@ if (
         path === "/api/admin/add-history" &&
         request.method === "POST"
       ) {
-        if (!(await getSessionRole(request, env))) {
+        if (!isAdmin(request)) {
           return json(
             {
               ok: false,
@@ -708,7 +693,7 @@ if (
         path === "/api/admin/delete" &&
         request.method === "POST"
       ) {
-        if (!(await getSessionRole(request, env))) {
+        if (!isAdmin(request)) {
           return json(
             {
               ok: false,
@@ -1382,56 +1367,21 @@ function cleanNumber(value) {
 // ADMIN AUTH
 // ==================================================
 
-async function hmacHex(secret, text) {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,"0")).join("");
-}
+function isAdmin(request) {
 
-async function makeSessionCookie(role, env) {
-  const secret = env.OWNER_PASSWORD || env.ADMIN_PASSWORD;
-  if (!secret) throw new Error("OWNER_PASSWORD or ADMIN_PASSWORD is required");
-  const payload = role + "." + Date.now();
-  return payload + "." + await hmacHex(secret, payload);
-}
+  const cookie =
+    request.headers.get(
+      "Cookie"
+    ) || "";
 
-async function getSessionRole(request, env) {
-  const cookie = request.headers.get("Cookie") || "";
-  const part = cookie.split(";").map(x=>x.trim()).find(x=>x.startsWith(COOKIE_NAME + "="));
-  if (!part) return null;
-  const value = part.slice(COOKIE_NAME.length + 1);
-  const bits = value.split(".");
-  if (bits.length !== 3 || !["owner","admin"].includes(bits[0])) return null;
-  const secret = env.OWNER_PASSWORD || env.ADMIN_PASSWORD;
-  if (!secret) return null;
-  const payload = bits[0] + "." + bits[1];
-  const expected = await hmacHex(secret, payload);
-  if (expected !== bits[2]) return null;
-  const issued = Number(bits[1]);
-  if (!Number.isFinite(issued) || Date.now() - issued > 2592000000) return null;
-  return bits[0];
-}
-
-async function passwordHash(password, saltHex) {
-  const salt = new Uint8Array(saltHex.match(/../g).map(x=>parseInt(x,16)));
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({name:"PBKDF2", salt, iterations:120000, hash:"SHA-256"}, key, 256);
-  return Array.from(new Uint8Array(bits)).map(b=>b.toString(16).padStart(2,"0")).join("");
-}
-
-async function setAdminPassword(env, password) {
-  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
-  const salt = Array.from(saltBytes).map(b=>b.toString(16).padStart(2,"0")).join("");
-  const hash = await passwordHash(password, salt);
-  await env.DB.prepare(`INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value`).bind(ADMIN_HASH_KEY, salt + ":" + hash).run();
-}
-
-async function verifyAdminPassword(env, password) {
-  const row = await env.DB.prepare(`SELECT setting_value FROM settings WHERE setting_key = ?`).bind(ADMIN_HASH_KEY).first();
-  if (!row) return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
-  const parts = String(row.setting_value).split(":");
-  if (parts.length !== 2) return false;
-  return (await passwordHash(password, parts[0])) === parts[1];
+  return cookie
+    .split(";")
+    .map(function(x) {
+      return x.trim();
+    })
+    .includes(
+      COOKIE_NAME + "=yes"
+    );
 }
 
 
@@ -1943,24 +1893,6 @@ body{
 const ROUNDS =
 ${JSON.stringify(ROUNDS)};
 
-async function changeAdminPassword(){
-  var current=document.getElementById("currentAdminPw").value;
-  var next=document.getElementById("newAdminPw").value;
-  var confirm=document.getElementById("confirmAdminPw").value;
-  var n=document.getElementById("passwordNotice");
-  if(next!==confirm){ n.textContent="New Password နှစ်ခု မတူပါ"; return; }
-  var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:current,new_password:next})});
-  var d=await r.json(); n.textContent=d.ok?"Admin Password ပြောင်းပြီးပါပြီ":(d.error||"Error");
-  if(d.ok){ document.getElementById("currentAdminPw").value="";document.getElementById("newAdminPw").value="";document.getElementById("confirmAdminPw").value=""; }
-}
-async function resetAdminPassword(){
-  var next=document.getElementById("ownerNewAdminPw").value;
-  var n=document.getElementById("passwordNotice");
-  var r=await fetch("/api/owner/reset-admin-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({new_password:next})});
-  var d=await r.json(); n.textContent=d.ok?"Admin Password Reset လုပ်ပြီးပါပြီ":(d.error||"Error");
-  if(d.ok) document.getElementById("ownerNewAdminPw").value="";
-}
-
 
 document.addEventListener("copy", function(e){ e.preventDefault(); });
 document.addEventListener("cut", function(e){ e.preventDefault(); });
@@ -2326,7 +2258,7 @@ button{
     >
 
       <label>
-        Owner / Admin Password
+        Admin Password
       </label>
 
       <input
@@ -2357,7 +2289,7 @@ button{
 // ADMIN PAGE
 // ==================================================
 
-function adminPage(role) {
+function adminPage() {
 
 return `
 <!DOCTYPE html>
@@ -2612,25 +2544,6 @@ button{
   >
     LOGOUT ADMIN
   </a>
-
-  <div class="card">
-    <h2>${role === "owner" ? "Owner Control" : "Admin Settings"}</h2>
-    <p class="small">Logged in as: <b>${role.toUpperCase()}</b></p>
-    ${role === "owner" ? `
-      <label>Reset Admin Password</label>
-      <input id="ownerNewAdminPw" type="password" placeholder="New Admin Password">
-      <button class="save" style="background:#6f42c1" onclick="resetAdminPassword()">RESET ADMIN PASSWORD</button>
-    ` : `
-      <label>Current Admin Password</label>
-      <input id="currentAdminPw" type="password" placeholder="Current Password">
-      <label>New Admin Password</label>
-      <input id="newAdminPw" type="password" placeholder="New Password">
-      <label>Confirm New Password</label>
-      <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
-      <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
-    `}
-    <div id="passwordNotice" class="notice"></div>
-  </div>
 <!-- ======================================
      LIVE ON / OFF CONTROL
      ====================================== -->

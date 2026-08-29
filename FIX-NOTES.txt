@@ -7,18 +7,3 @@ Fixed:
 4. Existing round publishing, final-result window, history and admin controls are retained.
 
 Deploy this project to Cloudflare Worker as before.
-
-OWNER + ADMIN PASSWORD UPDATE
-- Add Cloudflare secret OWNER_PASSWORD (keep this private; only owner knows it).
-- Existing ADMIN_PASSWORD remains the initial/fallback Admin password.
-- Login page accepts either Owner or Admin password.
-- Admin login shows Change Password controls. Changed Admin password is PBKDF2-hashed and stored in D1 settings.
-- Owner login shows Reset Admin Password control. Owner can reset Admin password without knowing the current Admin password.
-- Admin password changes do not change OWNER_PASSWORD.
-- Session cookie is HMAC-signed using OWNER_PASSWORD (or ADMIN_PASSWORD fallback).
-
-Recommended Cloudflare commands:
-  npx wrangler secret put OWNER_PASSWORD
-  npx wrangler secret put ADMIN_PASSWORD
-
-IMPORTANT: Do not give OWNER_PASSWORD or Cloudflare account access to the Admin user.

@@ -167,29 +167,21 @@ export default {
       // PASSWORD MANAGEMENT
       // =========================
       if (path === "/api/admin/change-password" && request.method === "POST") {
+        const role = await getSessionRole(request, env);
+        if (role !== "admin") return json({ok:false,error:"Admin အကောင့်ဖြင့် ဝင်ထားရပါမယ်"}, 403);
         try {
-          const role = await getSessionRole(request, env);
-          if (role !== "admin") return json({ok:false,error:"Admin အကောင့်ဖြင့် ဝင်ထားရန်လိုပါတယ်"}, 403);
-
           const body = await request.json();
           const current = String(body.current_password || "");
           const next = String(body.new_password || "");
-          const confirm = String(body.confirm_password || "");
-
           if (!current) return json({ok:false,error:"လက်ရှိ Password ထည့်ပေးပါ"}, 400);
           if (!next) return json({ok:false,error:"Password အသစ် ထည့်ပေးပါ"}, 400);
           if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
-          if (next !== confirm) return json({ok:false,error:"Password အသစ်နှစ်ခု မတူပါ"}, 400);
-          if (next === current) return json({ok:false,error:"Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"}, 400);
-
-          if (!(await verifyAdminPassword(env, current))) {
-            return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
-          }
-
+          if (next !== String(body.confirm_password || next)) return json({ok:false,error:"Password အသစ်နှစ်ခု မတူပါ"}, 400);
+          if (!(await verifyAdminPassword(env, current))) return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
           await setAdminPassword(env, next);
-          return json({ok:true,message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ"});
+          return json({ok:true,message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။"});
         } catch (e) {
-          return json({ok:false,error:"Password ပြောင်းရာတွင် Server Error ဖြစ်နေပါတယ်"}, 500);
+          return json({ok:false,error:"Password ပြောင်းနေစဉ် အမှားတစ်ခု ဖြစ်သွားပါတယ်"}, 500);
         }
       }
 
@@ -1442,11 +1434,22 @@ async function setAdminPassword(env, password) {
 }
 
 async function verifyAdminPassword(env, password) {
-  const row = await env.DB.prepare(`SELECT setting_value FROM settings WHERE setting_key = ?`).bind(ADMIN_HASH_KEY).first();
-  if (!row) return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
-  const parts = String(row.setting_value).split(":");
-  if (parts.length !== 2) return false;
-  return (await passwordHash(password, parts[0])) === parts[1];
+  // Prefer the database password, but keep the configured ADMIN_PASSWORD
+  // as a safe fallback. This prevents an old/stale hash from locking the
+  // admin out after previous password-change attempts.
+  try {
+    const row = await env.DB.prepare(`SELECT setting_value FROM settings WHERE setting_key = ?`).bind(ADMIN_HASH_KEY).first();
+    if (row) {
+      const parts = String(row.setting_value || "").split(":");
+      if (parts.length === 2) {
+        const ok = (await passwordHash(password, parts[0])) === parts[1];
+        if (ok) return true;
+      }
+    }
+  } catch (e) {
+    // Fall through to ADMIN_PASSWORD.
+  }
+  return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
 }
 
 
@@ -1972,18 +1975,18 @@ async function changeAdminPassword(){
   var next=document.getElementById("newAdminPw").value;
   var confirm=document.getElementById("confirmAdminPw").value;
   var n=document.getElementById("passwordNotice");
-  if(!current){ n.textContent="❌ လက်ရှိ Password ထည့်ပေးပါ"; return; }
-  if(!next){ n.textContent="❌ Password အသစ် ထည့်ပေးပါ"; return; }
-  if(next.length<6){ n.textContent="❌ Password အနည်းဆုံး 6 လုံးထားပါ"; return; }
-  if(next!==confirm){ n.textContent="❌ Password အသစ်နှစ်ခု မတူပါ"; return; }
-  if(next===current){ n.textContent="❌ Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"; return; }
-  n.textContent="⏳ Password ပြောင်းနေပါတယ်...";
-  try{
+  if(!current){ n.textContent="လက်ရှိ Password ထည့်ပေးပါ"; return; }
+  if(!next){ n.textContent="Password အသစ် ထည့်ပေးပါ"; return; }
+  if(next.length<6){ n.textContent="Password အနည်းဆုံး 6 လုံးထားပါ"; return; }
+  if(next!==confirm){ n.textContent="Password အသစ်နှစ်ခု မတူပါ"; return; }
+  try {
     var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})});
     var d=await r.json();
-    n.textContent=d.ok?"✅ Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။":("❌ "+(d.error||"Password ပြောင်းလို့ မရပါ"));
+    n.textContent=d.ok?"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။":(d.error||"Password ပြောင်းလို့ မရပါ");
     if(d.ok){ document.getElementById("currentAdminPw").value="";document.getElementById("newAdminPw").value="";document.getElementById("confirmAdminPw").value=""; }
-  }catch(e){ n.textContent="❌ Server နဲ့ ဆက်သွယ်ရာမှာ ပြဿနာဖြစ်နေပါတယ်"; }
+  } catch(e) {
+    n.textContent="Server နှင့် ချိတ်ဆက်၍ မရပါ";
+  }
 }
 async function resetAdminPassword(){
   var next=document.getElementById("ownerNewAdminPw").value;

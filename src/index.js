@@ -188,19 +188,7 @@ export default {
             }, 403);
           }
 
-          let body = {};
-          const contentType = request.headers.get("content-type") || "";
-          if (contentType.includes("application/json")) {
-            body = await request.json();
-          } else {
-            const form = await request.formData();
-            body = {
-              current_password: form.get("current_password") || "",
-              new_password: form.get("new_password") || "",
-              confirm_password: form.get("confirm_password") || ""
-            };
-          }
-
+          const body = await request.json();
           const current = String(body.current_password || "");
           const next = String(body.new_password || "");
           const confirm = String(body.confirm_password || "");
@@ -2157,12 +2145,6 @@ async function changeAdminPassword(){
     }
   }
 }
-
-// Make the handler explicitly available to the page and add a direct button listener.
-// This keeps the existing onclick as a fallback while ensuring the button always calls
-// the password-change handler in browsers that handle inline handlers differently.
-window.changeAdminPassword = changeAdminPassword;
-
 async function resetAdminPassword(){
   var next=document.getElementById("ownerNewAdminPw").value;
   var n=document.getElementById("passwordNotice");
@@ -2885,7 +2867,7 @@ button{
         <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
         <button type="button" class="password-eye" onclick="togglePassword('confirmAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
-      <button id="changeAdminPasswordBtn" type="button" class="save" style="background:#6f42c1">CHANGE PASSWORD</button>
+      <button id="changeAdminPasswordBtn" type="button" class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}
     <div id="passwordNotice" class="notice"></div>
   </div>
@@ -3953,6 +3935,99 @@ async function toggleLiveControl(){
     );
   }
 }
+function togglePassword(id, button){
+
+  var input = document.getElementById(id);
+  if(!input){
+    return false;
+  }
+
+  var show = input.type === "password";
+  input.type = show ? "text" : "password";
+
+  if(button){
+    button.textContent = show ? "🙈" : "👁";
+    button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    button.setAttribute("title", show ? "Hide password" : "Show password");
+  }
+
+  return false;
+}
+
+// PASSWORD CHANGE — admin page only
+async function changeAdminPassword(){
+
+  var currentEl = document.getElementById("currentAdminPw");
+  var nextEl = document.getElementById("newAdminPw");
+  var confirmEl = document.getElementById("confirmAdminPw");
+  var notice = document.getElementById("passwordNotice");
+  var button = document.getElementById("changeAdminPasswordBtn");
+
+  if(!currentEl || !nextEl || !confirmEl || !notice){
+    return;
+  }
+
+  function show(message, ok){
+    notice.textContent = message || "";
+    notice.className = "notice " + (ok ? "ok" : "bad");
+    notice.style.display = "block";
+  }
+
+  var current = String(currentEl.value || "");
+  var next = String(nextEl.value || "");
+  var confirm = String(confirmEl.value || "");
+
+  if(!current){ show("လက်ရှိ Password ထည့်ပါ", false); currentEl.focus(); return; }
+  if(!next){ show("Password အသစ် ထည့်ပါ", false); nextEl.focus(); return; }
+  if(next.length < 6){ show("Password အနည်းဆုံး 6 လုံးထားပါ", false); nextEl.focus(); return; }
+  if(next !== confirm){ show("Password အသစ် နှစ်ခု မတူပါ", false); confirmEl.focus(); return; }
+  if(current === next){ show("Password အသစ်က လက်ရှိ Password နဲ့ မတူရပါ", false); nextEl.focus(); return; }
+
+  if(button){
+    button.disabled = true;
+    button.textContent = "PASSWORD ပြောင်းနေပါတယ်...";
+  }
+
+  try{
+    var response = await fetch("/api/admin/change-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      credentials: "same-origin",
+      cache: "no-store",
+      body: JSON.stringify({
+        current_password: current,
+        new_password: next,
+        confirm_password: confirm
+      })
+    });
+
+    var raw = await response.text();
+    var data;
+    try{ data = JSON.parse(raw); }
+    catch(e){ data = {ok:false, error:"Server response မမှန်ပါ"}; }
+
+    if(response.ok && data && data.ok){
+      show("Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ", true);
+      currentEl.value = "";
+      nextEl.value = "";
+      confirmEl.value = "";
+    }else{
+      show((data && data.error) || "Password ပြောင်းလို့ မရပါ", false);
+    }
+  }catch(error){
+    console.error("changeAdminPassword", error);
+    show("Password ပြောင်းရာတွင် အမှားဖြစ်နေပါတယ်", false);
+  }finally{
+    if(button){
+      button.disabled = false;
+      button.textContent = "CHANGE PASSWORD";
+    }
+  }
+}
+
 // ======================================
 // INITIAL
 // ======================================
@@ -3964,14 +4039,6 @@ async function startAdmin(){
   await loadAdminList();
 
   await loadOldHistoryValues();
-
-  var changeBtn = document.getElementById("changeAdminPasswordBtn");
-  if (changeBtn && changeBtn.dataset.passwordBound !== "1") {
-    changeBtn.dataset.passwordBound = "1";
-    changeBtn.addEventListener("click", function () {
-      window.changeAdminPassword();
-    });
-  }
 
 }
 

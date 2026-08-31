@@ -26,7 +26,17 @@ function currentSessionStartUtcSql() {
   return new Date(ms).toISOString().slice(0, 19).replace("T", " ");
 }
 
+async function ensureSettingsTable(env) {
+  await env.DB.prepare(`
+    CREATE TABLE IF NOT EXISTS settings (
+      setting_key TEXT PRIMARY KEY,
+      setting_value TEXT NOT NULL
+    )
+  `).run();
+}
+
 async function ensurePresetTable(env) {
+  await ensureSettingsTable(env);
   await env.DB.prepare(`
     CREATE TABLE IF NOT EXISTS preset_results (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -103,6 +113,8 @@ export default {
     const path = url.pathname;
 
     try {
+      // Ensure the settings table exists before password/live-control logic uses it.
+      await ensureSettingsTable(env);
 
       // =========================
       // USER PAGE
@@ -168,36 +180,25 @@ export default {
       // =========================
       if (path === "/api/admin/change-password" && request.method === "POST") {
         const role = await getSessionRole(request, env);
-        if (role !== "admin") return json({ok:false,error:"Admin အကောင့်ဖြင့် ဝင်ထားရပါမယ်"}, 403);
-        try {
-          const contentType = request.headers.get("content-type") || "";
-          let body = {};
-          if (contentType.includes("application/json")) {
-            body = await request.json();
-          } else {
-            const form = await request.formData();
-            body = {
-              current_password: form.get("current_password"),
-              new_password: form.get("new_password"),
-              confirm_password: form.get("confirm_password")
-            };
-          }
-          const current = String(body.current_password ?? "");
-          const next = String(body.new_password ?? "");
-          const confirm = String(body.confirm_password ?? "");
-          if (!current) return json({ok:false,error:"လက်ရှိ Password ထည့်ပေးပါ"}, 400);
-          if (!next) return json({ok:false,error:"Password အသစ် ထည့်ပေးပါ"}, 400);
-          if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
-          if (!confirm) return json({ok:false,error:"Password အတည်ပြုချက် ထည့်ပေးပါ"}, 400);
-          if (next !== confirm) return json({ok:false,error:"Password အသစ်နှစ်ခု မတူပါ"}, 400);
-          if (next === current) return json({ok:false,error:"Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"}, 400);
-          if (!(await verifyAdminPassword(env, current))) return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
-          await setAdminPassword(env, next);
-          return json({ok:true,message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။"});
-        } catch (e) {
-          console.error("change-password error", e);
-          return json({ok:false,error:"Password ပြောင်းနေစဉ် အမှားတစ်ခု ဖြစ်သွားပါတယ်: " + String(e && e.message || e)}, 500);
+        if (role !== "admin") return json({ok:false,error:"Admin only"}, 403);
+
+        const body = await request.json();
+        const current = String(body.current_password ?? "");
+        const next = String(body.new_password ?? "");
+
+        if (!current) return json({ok:false,error:"Current Password ထည့်ပါ"}, 400);
+        if (!next) return json({ok:false,error:"New Password ထည့်ပါ"}, 400);
+        if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
+        if (next !== String(body.confirm_password ?? next)) {
+          return json({ok:false,error:"New Password နှစ်ခု မတူပါ"}, 400);
         }
+
+        if (!(await verifyAdminPassword(env, current))) {
+          return json({ok:false,error:"Current password မှားနေပါတယ်"}, 400);
+        }
+
+        await setAdminPassword(env, next);
+        return json({ok:true,message:"Admin Password ပြောင်းပြီးပါပြီ"});
       }
 
       if (path === "/api/owner/reset-admin-password" && request.method === "POST") {
@@ -1442,6 +1443,7 @@ async function passwordHash(password, saltHex) {
 }
 
 async function setAdminPassword(env, password) {
+  await ensureSettingsTable(env);
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
   const salt = Array.from(saltBytes).map(b=>b.toString(16).padStart(2,"0")).join("");
   const hash = await passwordHash(password, salt);
@@ -1449,22 +1451,12 @@ async function setAdminPassword(env, password) {
 }
 
 async function verifyAdminPassword(env, password) {
-  // Prefer the database password, but keep the configured ADMIN_PASSWORD
-  // as a safe fallback. This prevents an old/stale hash from locking the
-  // admin out after previous password-change attempts.
-  try {
-    const row = await env.DB.prepare(`SELECT setting_value FROM settings WHERE setting_key = ?`).bind(ADMIN_HASH_KEY).first();
-    if (row) {
-      const parts = String(row.setting_value || "").split(":");
-      if (parts.length === 2) {
-        const ok = (await passwordHash(password, parts[0])) === parts[1];
-        if (ok) return true;
-      }
-    }
-  } catch (e) {
-    // Fall through to ADMIN_PASSWORD.
-  }
-  return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+  await ensureSettingsTable(env);
+  const row = await env.DB.prepare(`SELECT setting_value FROM settings WHERE setting_key = ?`).bind(ADMIN_HASH_KEY).first();
+  if (!row) return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+  const parts = String(row.setting_value).split(":");
+  if (parts.length !== 2) return false;
+  return (await passwordHash(password, parts[0])) === parts[1];
 }
 
 
@@ -1978,63 +1970,23 @@ ${JSON.stringify(ROUNDS)};
 
 function togglePassword(id, button){
   const input=document.getElementById(id);
-  if(!input) return false;
-  const show = input.type === "password";
-  input.type = show ? "text" : "password";
-  button.textContent = show ? "🙈" : "👁";
-  button.setAttribute("aria-label", show ? "Hide password" : "Show password");
-  input.focus({preventScroll:true});
-  return false;
+  if(!input) return;
+  const showing=input.type==='text';
+  input.type=showing?'password':'text';
+  button.textContent=showing?'👁':'🙈';
+  button.setAttribute('aria-label', showing?'Show password':'Hide password');
 }
-
-function setupPasswordEyes(){
-  document.querySelectorAll(".password-eye[data-password-target]").forEach(function(button){
-    if(button.dataset.eyeReady === "1") return;
-    button.dataset.eyeReady = "1";
-    button.addEventListener("pointerdown", function(e){ e.preventDefault(); e.stopPropagation(); });
-    button.addEventListener("click", function(e){
-      e.preventDefault();
-      e.stopPropagation();
-      togglePassword(button.getAttribute("data-password-target"), button);
-    });
-  });
-}
-setupPasswordEyes();
 
 async function changeAdminPassword(){
   var current=document.getElementById("currentAdminPw").value;
   var next=document.getElementById("newAdminPw").value;
   var confirm=document.getElementById("confirmAdminPw").value;
   var n=document.getElementById("passwordNotice");
-  n.textContent="";
-  if(!current){ n.textContent="လက်ရှိ Password ထည့်ပေးပါ"; return; }
-  if(!next){ n.textContent="Password အသစ် ထည့်ပေးပါ"; return; }
-  if(next.length<6){ n.textContent="Password အနည်းဆုံး 6 လုံးထားပါ"; return; }
-  if(!confirm){ n.textContent="Password အတည်ပြုချက် ထည့်ပေးပါ"; return; }
-  if(next!==confirm){ n.textContent="Password အသစ်နှစ်ခု မတူပါ"; return; }
-  if(next===current){ n.textContent="Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"; return; }
-  try {
-    n.textContent="Password ပြောင်းနေပါသည်...";
-    var r=await fetch("/api/admin/change-password",{
-      method:"POST",
-      headers:{"Content-Type":"application/json","Accept":"application/json"},
-      credentials:"same-origin",
-      cache:"no-store",
-      body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})
-    });
-    var text=await r.text();
-    var d={};
-    try { d=JSON.parse(text); } catch(e) {}
-    if(!r.ok || !d.ok){ n.textContent=d.error||("Password ပြောင်းလို့ မရပါ (HTTP "+r.status+")"); return; }
-    n.textContent=d.message||"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။";
-    document.getElementById("currentAdminPw").value="";
-    document.getElementById("newAdminPw").value="";
-    document.getElementById("confirmAdminPw").value="";
-  } catch(e) {
-    n.textContent="Server နှင့် ချိတ်ဆက်၍ မရပါ: "+(e && e.message ? e.message : e);
-  }
+  if(next!==confirm){ n.textContent="New Password နှစ်ခု မတူပါ"; return; }
+  var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})});
+  var d=await r.json(); n.textContent=d.ok?"Admin Password ပြောင်းပြီးပါပြီ":(d.error||"Error");
+  if(d.ok){ document.getElementById("currentAdminPw").value="";document.getElementById("newAdminPw").value="";document.getElementById("confirmAdminPw").value=""; }
 }
-
 async function resetAdminPassword(){
   var next=document.getElementById("ownerNewAdminPw").value;
   var n=document.getElementById("passwordNotice");
@@ -2415,12 +2367,11 @@ button{
         <input
           id="loginPassword"
           type="password"
-          autocomplete="current-password"
           name="password"
           placeholder="Password"
           required
         >
-        <button type="button" class="password-eye" data-password-target="loginPassword" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" onclick="togglePassword('loginPassword', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
 
       <button type="submit">
@@ -2432,21 +2383,6 @@ button{
   </div>
 
 </div>
-
-<script>
-document.querySelectorAll(".password-eye[data-password-target]").forEach(function(button){
-  button.addEventListener("pointerdown", function(e){ e.preventDefault(); e.stopPropagation(); });
-  button.addEventListener("click", function(e){
-    e.preventDefault(); e.stopPropagation();
-    const input=document.getElementById(button.getAttribute("data-password-target"));
-    if(!input) return;
-    const show=input.type === "password";
-    input.type=show ? "text" : "password";
-    button.textContent=show ? "🙈" : "👁";
-    button.setAttribute("aria-label",show ? "Hide password" : "Show password");
-  });
-});
-</script>
 
 </body>
 </html>
@@ -2564,12 +2500,7 @@ select{
   line-height:40px;
   text-align:center;
   cursor:pointer;
-  z-index:10;
-  pointer-events:auto;
-  touch-action:manipulation;
-  -webkit-user-select:none;
-  user-select:none;
-  -webkit-tap-highlight-color:transparent;
+  z-index:2;
 }
 .password-eye:hover{
   background:#eef2f5;
@@ -2758,25 +2689,25 @@ button{
     ${role === "owner" ? `
       <label>Reset Admin Password</label>
       <div class="password-field">
-        <input id="ownerNewAdminPw" type="password" autocomplete="new-password" placeholder="New Admin Password">
-        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <input id="ownerNewAdminPw" type="password" placeholder="New Admin Password">
+        <button type="button" class="password-eye" onclick="togglePassword('ownerNewAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="resetAdminPassword()">RESET ADMIN PASSWORD</button>
     ` : `
       <label>Current Admin Password</label>
       <div class="password-field">
-        <input id="currentAdminPw" type="password" autocomplete="current-password" placeholder="Current Password">
-        <button type="button" class="password-eye" data-password-target="currentAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <input id="currentAdminPw" type="password" placeholder="Current Password">
+        <button type="button" class="password-eye" onclick="togglePassword('currentAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>New Admin Password</label>
       <div class="password-field">
-        <input id="newAdminPw" type="password" autocomplete="new-password" placeholder="New Password">
-        <button type="button" class="password-eye" data-password-target="newAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <input id="newAdminPw" type="password" placeholder="New Password">
+        <button type="button" class="password-eye" onclick="togglePassword('newAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>Confirm New Password</label>
       <div class="password-field">
-        <input id="confirmAdminPw" type="password" autocomplete="new-password" placeholder="Confirm Password">
-        <button type="button" class="password-eye" data-password-target="confirmAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
+        <button type="button" class="password-eye" onclick="togglePassword('confirmAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}
@@ -3846,6 +3777,24 @@ async function toggleLiveControl(){
     );
   }
 }
+function togglePassword(id, button){
+
+  var input = document.getElementById(id);
+  if(!input){
+    return;
+  }
+
+  if(input.type === "password"){
+    input.type = "text";
+    button.textContent = "🙈";
+    button.setAttribute("aria-label", "Hide password");
+  }else{
+    input.type = "password";
+    button.textContent = "👁";
+    button.setAttribute("aria-label", "Show password");
+  }
+}
+
 // ======================================
 // INITIAL
 // ======================================

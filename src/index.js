@@ -1586,10 +1586,12 @@ async function verifyAdminPassword(env, password) {
     .bind(ADMIN_HASH_KEY)
     .first();
 
-  // First-time / recovery fallback.
+  // Bootstrap fallback is allowed ONLY before a D1 password record exists.
+  // Once D1 has a password record, the deployment secret must NOT remain a
+  // valid login password; otherwise changing the password would not actually
+  // invalidate the old password.
   if (!row || !row.setting_value) {
-    return !!env.ADMIN_PASSWORD &&
-      password === env.ADMIN_PASSWORD;
+    return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
   }
 
   const parts = String(row.setting_value).split(":");
@@ -1620,16 +1622,15 @@ async function verifyAdminPassword(env, password) {
     storedHash = parts[1];
   }
 
+  // A D1 password record exists, so ONLY the D1 password is accepted.
+  // Do not fall back to ADMIN_PASSWORD here: that would let the old password
+  // continue to log in after a successful password change.
   if (salt && storedHash) {
-    const hashedMatch =
-      await passwordHash(password, salt, iterations) === storedHash;
-
-    if (hashedMatch) return true;
+    return await passwordHash(password, salt, iterations) === storedHash;
   }
 
-  // Keep the deployment secret as a recovery fallback.
-  return !!env.ADMIN_PASSWORD &&
-    password === env.ADMIN_PASSWORD;
+  // Existing but invalid/corrupt D1 password record: fail closed.
+  return false;
 }
 
 // ==================================================

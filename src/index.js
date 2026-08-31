@@ -1978,15 +1978,31 @@ ${JSON.stringify(ROUNDS)};
 
 function togglePassword(id, button){
   const input=document.getElementById(id);
-  if(!input) return;
-  const showing=input.type==='text';
-  input.type=showing?'password':'text';
-  button.textContent=showing?'👁':'🙈';
-  button.setAttribute('aria-label', showing?'Show password':'Hide password');
+  if(!input) return false;
+  const show = input.type === "password";
+  input.type = show ? "text" : "password";
+  button.textContent = show ? "🙈" : "👁";
+  button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+  input.focus({preventScroll:true});
+  return false;
 }
 
+function setupPasswordEyes(){
+  document.querySelectorAll(".password-eye[data-password-target]").forEach(function(button){
+    if(button.dataset.eyeReady === "1") return;
+    button.dataset.eyeReady = "1";
+    button.addEventListener("pointerdown", function(e){ e.preventDefault(); e.stopPropagation(); });
+    button.addEventListener("click", function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      togglePassword(button.getAttribute("data-password-target"), button);
+    });
+  });
+}
+setupPasswordEyes();
+
 async function changeAdminPassword(){
-  var current=document.getElementById("currentAdminPw").value.trim();
+  var current=document.getElementById("currentAdminPw").value;
   var next=document.getElementById("newAdminPw").value;
   var confirm=document.getElementById("confirmAdminPw").value;
   var n=document.getElementById("passwordNotice");
@@ -1999,7 +2015,13 @@ async function changeAdminPassword(){
   if(next===current){ n.textContent="Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"; return; }
   try {
     n.textContent="Password ပြောင်းနေပါသည်...";
-    var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},credentials:"same-origin",body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})});
+    var r=await fetch("/api/admin/change-password",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      credentials:"same-origin",
+      cache:"no-store",
+      body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})
+    });
     var text=await r.text();
     var d={};
     try { d=JSON.parse(text); } catch(e) {}
@@ -2012,6 +2034,7 @@ async function changeAdminPassword(){
     n.textContent="Server နှင့် ချိတ်ဆက်၍ မရပါ: "+(e && e.message ? e.message : e);
   }
 }
+
 async function resetAdminPassword(){
   var next=document.getElementById("ownerNewAdminPw").value;
   var n=document.getElementById("passwordNotice");
@@ -2392,11 +2415,12 @@ button{
         <input
           id="loginPassword"
           type="password"
+          autocomplete="current-password"
           name="password"
           placeholder="Password"
           required
         >
-        <button type="button" class="password-eye" data-password-target="loginPassword" aria-label="Show password" title="Show / Hide Password" onclick="toggleLoginPassword(this)">👁</button>
+        <button type="button" class="password-eye" data-password-target="loginPassword" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
 
       <button type="submit">
@@ -2410,17 +2434,18 @@ button{
 </div>
 
 <script>
-(function(){
-  function toggleLoginPassword(button){
-    const id=button.getAttribute('data-password-target');
-    const input=document.getElementById(id);
+document.querySelectorAll(".password-eye[data-password-target]").forEach(function(button){
+  button.addEventListener("pointerdown", function(e){ e.preventDefault(); e.stopPropagation(); });
+  button.addEventListener("click", function(e){
+    e.preventDefault(); e.stopPropagation();
+    const input=document.getElementById(button.getAttribute("data-password-target"));
     if(!input) return;
-    const show=input.type==='password';
-    input.type=show?'text':'password';
-    button.textContent=show?'🙈':'👁';
-    button.setAttribute('aria-label',show?'Hide password':'Show password');
-  }
-})();
+    const show=input.type === "password";
+    input.type=show ? "text" : "password";
+    button.textContent=show ? "🙈" : "👁";
+    button.setAttribute("aria-label",show ? "Hide password" : "Show password");
+  });
+});
 </script>
 
 </body>
@@ -2733,25 +2758,25 @@ button{
     ${role === "owner" ? `
       <label>Reset Admin Password</label>
       <div class="password-field">
-        <input id="ownerNewAdminPw" type="password" placeholder="New Admin Password">
-        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('ownerNewAdminPw', this)">👁</button>
+        <input id="ownerNewAdminPw" type="password" autocomplete="new-password" placeholder="New Admin Password">
+        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="resetAdminPassword()">RESET ADMIN PASSWORD</button>
     ` : `
       <label>Current Admin Password</label>
       <div class="password-field">
-        <input id="currentAdminPw" type="password" placeholder="Current Password">
-        <button type="button" class="password-eye" data-password-target="currentAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('currentAdminPw', this)">👁</button>
+        <input id="currentAdminPw" type="password" autocomplete="current-password" placeholder="Current Password">
+        <button type="button" class="password-eye" data-password-target="currentAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>New Admin Password</label>
       <div class="password-field">
-        <input id="newAdminPw" type="password" placeholder="New Password">
-        <button type="button" class="password-eye" data-password-target="newAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('newAdminPw', this)">👁</button>
+        <input id="newAdminPw" type="password" autocomplete="new-password" placeholder="New Password">
+        <button type="button" class="password-eye" data-password-target="newAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>Confirm New Password</label>
       <div class="password-field">
-        <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
-        <button type="button" class="password-eye" data-password-target="confirmAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('confirmAdminPw', this)">👁</button>
+        <input id="confirmAdminPw" type="password" autocomplete="new-password" placeholder="Confirm Password">
+        <button type="button" class="password-eye" data-password-target="confirmAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}

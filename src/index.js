@@ -170,18 +170,33 @@ export default {
         const role = await getSessionRole(request, env);
         if (role !== "admin") return json({ok:false,error:"Admin အကောင့်ဖြင့် ဝင်ထားရပါမယ်"}, 403);
         try {
-          const body = await request.json();
-          const current = String(body.current_password || "");
-          const next = String(body.new_password || "");
+          const contentType = request.headers.get("content-type") || "";
+          let body = {};
+          if (contentType.includes("application/json")) {
+            body = await request.json();
+          } else {
+            const form = await request.formData();
+            body = {
+              current_password: form.get("current_password"),
+              new_password: form.get("new_password"),
+              confirm_password: form.get("confirm_password")
+            };
+          }
+          const current = String(body.current_password ?? "");
+          const next = String(body.new_password ?? "");
+          const confirm = String(body.confirm_password ?? "");
           if (!current) return json({ok:false,error:"လက်ရှိ Password ထည့်ပေးပါ"}, 400);
           if (!next) return json({ok:false,error:"Password အသစ် ထည့်ပေးပါ"}, 400);
           if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
-          if (next !== String(body.confirm_password || next)) return json({ok:false,error:"Password အသစ်နှစ်ခု မတူပါ"}, 400);
+          if (!confirm) return json({ok:false,error:"Password အတည်ပြုချက် ထည့်ပေးပါ"}, 400);
+          if (next !== confirm) return json({ok:false,error:"Password အသစ်နှစ်ခု မတူပါ"}, 400);
+          if (next === current) return json({ok:false,error:"Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"}, 400);
           if (!(await verifyAdminPassword(env, current))) return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
           await setAdminPassword(env, next);
           return json({ok:true,message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။"});
         } catch (e) {
-          return json({ok:false,error:"Password ပြောင်းနေစဉ် အမှားတစ်ခု ဖြစ်သွားပါတယ်"}, 500);
+          console.error("change-password error", e);
+          return json({ok:false,error:"Password ပြောင်းနေစဉ် အမှားတစ်ခု ဖြစ်သွားပါတယ်: " + String(e && e.message || e)}, 500);
         }
       }
 
@@ -1971,21 +1986,30 @@ function togglePassword(id, button){
 }
 
 async function changeAdminPassword(){
-  var current=document.getElementById("currentAdminPw").value;
+  var current=document.getElementById("currentAdminPw").value.trim();
   var next=document.getElementById("newAdminPw").value;
   var confirm=document.getElementById("confirmAdminPw").value;
   var n=document.getElementById("passwordNotice");
+  n.textContent="";
   if(!current){ n.textContent="လက်ရှိ Password ထည့်ပေးပါ"; return; }
   if(!next){ n.textContent="Password အသစ် ထည့်ပေးပါ"; return; }
   if(next.length<6){ n.textContent="Password အနည်းဆုံး 6 လုံးထားပါ"; return; }
+  if(!confirm){ n.textContent="Password အတည်ပြုချက် ထည့်ပေးပါ"; return; }
   if(next!==confirm){ n.textContent="Password အသစ်နှစ်ခု မတူပါ"; return; }
+  if(next===current){ n.textContent="Password အသစ်သည် လက်ရှိ Password နှင့် မတူရပါ"; return; }
   try {
-    var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})});
-    var d=await r.json();
-    n.textContent=d.ok?"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။":(d.error||"Password ပြောင်းလို့ မရပါ");
-    if(d.ok){ document.getElementById("currentAdminPw").value="";document.getElementById("newAdminPw").value="";document.getElementById("confirmAdminPw").value=""; }
+    n.textContent="Password ပြောင်းနေပါသည်...";
+    var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json","Accept":"application/json"},credentials:"same-origin",body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})});
+    var text=await r.text();
+    var d={};
+    try { d=JSON.parse(text); } catch(e) {}
+    if(!r.ok || !d.ok){ n.textContent=d.error||("Password ပြောင်းလို့ မရပါ (HTTP "+r.status+")"); return; }
+    n.textContent=d.message||"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ။";
+    document.getElementById("currentAdminPw").value="";
+    document.getElementById("newAdminPw").value="";
+    document.getElementById("confirmAdminPw").value="";
   } catch(e) {
-    n.textContent="Server နှင့် ချိတ်ဆက်၍ မရပါ";
+    n.textContent="Server နှင့် ချိတ်ဆက်၍ မရပါ: "+(e && e.message ? e.message : e);
   }
 }
 async function resetAdminPassword(){
@@ -3778,24 +3802,6 @@ async function toggleLiveControl(){
     );
   }
 }
-function togglePassword(id, button){
-
-  var input = document.getElementById(id);
-  if(!input){
-    return;
-  }
-
-  if(input.type === "password"){
-    input.type = "text";
-    button.textContent = "🙈";
-    button.setAttribute("aria-label", "Hide password");
-  }else{
-    input.type = "password";
-    button.textContent = "👁";
-    button.setAttribute("aria-label", "Show password");
-  }
-}
-
 // ======================================
 // INITIAL
 // ======================================

@@ -1476,87 +1476,161 @@ async function getSessionRole(request, env) {
 }
 
 async function passwordHash(password, saltHex) {
-  const salt = new Uint8Array(saltHex.match(/../g).map(x=>parseInt(x,16)));
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({name:"PBKDF2", salt, iterations:120000, hash:"SHA-256"}, key, 256);
-  return Array.from(new Uint8Array(bits)).map(b=>b.toString(16).padStart(2,"0")).join("");
+  const cleanSalt = String(saltHex || "").trim();
+
+  if (!/^[0-9a-fA-F]{32}$/.test(cleanSalt)) {
+    throw new Error("Invalid password salt");
+  }
+
+  const salt = new Uint8Array(
+    cleanSalt.match(/../g).map(function(x) {
+      return parseInt(x, 16);
+    })
+  );
+
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(password)),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 120000,
+      hash: "SHA-256"
+    },
+    key,
+    256
+  );
+
+  return Array.from(new Uint8Array(bits))
+    .map(function(b) {
+      return b.toString(16).padStart(2, "0");
+    })
+    .join("");
 }
 
 async function setAdminPassword(env, password) {
   await ensureSettingsTable(env);
 
-  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
-  const salt = Array.from(saltBytes)
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const hash = await passwordHash(password, salt);
-  const value = salt + ":" + hash;
-
-  // D1-safe update: update the existing row first, otherwise insert it.
-  // This avoids relying on an UPSERT for password changes.
-  const existing = await env.DB.prepare(`
-    SELECT setting_key
-    FROM settings
-    WHERE setting_key = ?
-  `).bind(ADMIN_HASH_KEY).first();
-
-  if (existing) {
-    await env.DB.prepare(`
-      UPDATE settings
-      SET setting_value = ?
-      WHERE setting_key = ?
-    `).bind(value, ADMIN_HASH_KEY).run();
-  } else {
-    await env.DB.prepare(`
-      INSERT INTO settings (setting_key, setting_value)
-      VALUES (?, ?)
-    `).bind(ADMIN_HASH_KEY, value).run();
+  const passwordText = String(password || "");
+  if (passwordText.length < 6) {
+    throw new Error("Password အနည်းဆုံး 6 လုံးထားပါ");
   }
 
-  // Confirm that the new password can be verified immediately.
+  const saltBytes = crypto.getRandomValues(
+    new Uint8Array(16)
+  );
+
+  const salt = Array.from(saltBytes)
+    .map(function(b) {
+      return b.toString(16).padStart(2, "0");
+    })
+    .join("");
+
+  const hash = await passwordHash(
+    passwordText,
+    salt
+  );
+
+  const value = salt + ":" + hash;
+
+  // D1-safe single statement. The setting_key is PRIMARY KEY/UNIQUE.
+  // This creates the password row if it does not exist and updates it
+  // if it already exists.
+  await env.DB.prepare(`
+    INSERT INTO settings
+      (setting_key, setting_value)
+    VALUES (?, ?)
+    ON CONFLICT(setting_key)
+    DO UPDATE SET
+      setting_value = excluded.setting_value
+  `)
+    .bind(
+      ADMIN_HASH_KEY,
+      value
+    )
+    .run();
+
+  // Read the value back before reporting success.
   const saved = await env.DB.prepare(`
     SELECT setting_value
     FROM settings
     WHERE setting_key = ?
-  `).bind(ADMIN_HASH_KEY).first();
+  `)
+    .bind(ADMIN_HASH_KEY)
+    .first();
 
-  if (!saved || saved.setting_value !== value) {
-    throw new Error("Admin password update verification failed");
+  if (!saved || String(saved.setting_value) !== value) {
+    throw new Error(
+      "Admin password was not saved to D1"
+    );
+  }
+
+  // Verify the just-written hash immediately.
+  const verified =
+    await passwordHash(
+      passwordText,
+      salt
+    ) === hash;
+
+  if (!verified) {
+    throw new Error(
+      "Admin password verification failed"
+    );
   }
 }
 
 async function verifyAdminPassword(env, password) {
   await ensureSettingsTable(env);
 
-  const row = await env.DB.prepare(
-    `SELECT setting_value FROM settings WHERE setting_key = ?`
-  ).bind(ADMIN_HASH_KEY).first();
+  const row = await env.DB.prepare(`
+    SELECT setting_value
+    FROM settings
+    WHERE setting_key = ?
+  `)
+    .bind(ADMIN_HASH_KEY)
+    .first();
 
-  // If no DB password has been saved yet, use the configured ADMIN_PASSWORD.
+  // First-time / repair fallback.
   if (!row || !row.setting_value) {
-    return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+    return !!env.ADMIN_PASSWORD &&
+      password === env.ADMIN_PASSWORD;
   }
 
-  const parts = String(row.setting_value).split(":");
+  const parts =
+    String(row.setting_value).split(":");
 
-  // If an old/invalid DB value exists, still allow the configured
-  // ADMIN_PASSWORD so the password can be repaired from Admin Settings.
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+  if (
+    parts.length !== 2 ||
+    !/^[0-9a-fA-F]{32}$/.test(parts[0]) ||
+    !/^[0-9a-fA-F]{64}$/.test(parts[1])
+  ) {
+    return !!env.ADMIN_PASSWORD &&
+      password === env.ADMIN_PASSWORD;
   }
 
-  const hashedMatch = (await passwordHash(password, parts[0])) === parts[1];
+  const hashedMatch =
+    await passwordHash(
+      password,
+      parts[0]
+    ) === parts[1];
 
-  // Allow the current Wrangler/GitHub ADMIN_PASSWORD as a safe fallback
-  // for an existing deployment whose DB password record is stale.
-  if (!hashedMatch && env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD) {
+  // Keep the deployment secret as a recovery fallback.
+  if (
+    !hashedMatch &&
+    env.ADMIN_PASSWORD &&
+    password === env.ADMIN_PASSWORD
+  ) {
     return true;
   }
 
   return hashedMatch;
 }
-
 
 // ==================================================
 // RESPONSE HELPERS

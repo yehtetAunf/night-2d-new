@@ -1985,19 +1985,6 @@ function togglePassword(id, button){
   button.setAttribute('aria-label', showing?'Show password':'Hide password');
 }
 
-// Mobile-safe password eye handler. Prevent the tap from focusing/selecting the input.
-document.addEventListener('pointerdown', function(e){
-  const btn=e.target.closest && e.target.closest('.password-eye');
-  if(btn){ e.preventDefault(); e.stopPropagation(); }
-}, true);
-document.addEventListener('click', function(e){
-  const btn=e.target.closest && e.target.closest('.password-eye');
-  if(!btn) return;
-  e.preventDefault();
-  e.stopPropagation();
-  togglePassword(btn.getAttribute('data-password-target'), btn);
-}, true);
-
 async function changeAdminPassword(){
   var current=document.getElementById("currentAdminPw").value.trim();
   var next=document.getElementById("newAdminPw").value;
@@ -2409,7 +2396,7 @@ button{
           placeholder="Password"
           required
         >
-        <button type="button" class="password-eye" data-password-target="loginPassword" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="loginPassword" aria-label="Show password" title="Show / Hide Password" onclick="toggleLoginPassword(this)">👁</button>
       </div>
 
       <button type="submit">
@@ -2433,16 +2420,6 @@ button{
     button.textContent=show?'🙈':'👁';
     button.setAttribute('aria-label',show?'Hide password':'Show password');
   }
-  document.addEventListener('pointerdown',function(e){
-    const btn=e.target.closest && e.target.closest('.password-eye');
-    if(btn){e.preventDefault();e.stopPropagation();}
-  },true);
-  document.addEventListener('click',function(e){
-    const btn=e.target.closest && e.target.closest('.password-eye');
-    if(!btn) return;
-    e.preventDefault();e.stopPropagation();
-    toggleLoginPassword(btn);
-  },true);
 })();
 </script>
 
@@ -2757,24 +2734,24 @@ button{
       <label>Reset Admin Password</label>
       <div class="password-field">
         <input id="ownerNewAdminPw" type="password" placeholder="New Admin Password">
-        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('ownerNewAdminPw', this)">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="resetAdminPassword()">RESET ADMIN PASSWORD</button>
     ` : `
       <label>Current Admin Password</label>
       <div class="password-field">
         <input id="currentAdminPw" type="password" placeholder="Current Password">
-        <button type="button" class="password-eye" data-password-target="currentAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="currentAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('currentAdminPw', this)">👁</button>
       </div>
       <label>New Admin Password</label>
       <div class="password-field">
         <input id="newAdminPw" type="password" placeholder="New Password">
-        <button type="button" class="password-eye" data-password-target="newAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="newAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('newAdminPw', this)">👁</button>
       </div>
       <label>Confirm New Password</label>
       <div class="password-field">
         <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
-        <button type="button" class="password-eye" data-password-target="confirmAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="confirmAdminPw" aria-label="Show password" title="Show / Hide Password" onclick="togglePassword('confirmAdminPw', this)">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}

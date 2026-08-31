@@ -188,7 +188,19 @@ export default {
             }, 403);
           }
 
-          const body = await request.json();
+          let body = {};
+          const contentType = request.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            body = await request.json();
+          } else {
+            const form = await request.formData();
+            body = {
+              current_password: form.get("current_password") || "",
+              new_password: form.get("new_password") || "",
+              confirm_password: form.get("confirm_password") || ""
+            };
+          }
+
           const current = String(body.current_password || "");
           const next = String(body.new_password || "");
           const confirm = String(body.confirm_password || "");
@@ -2145,6 +2157,12 @@ async function changeAdminPassword(){
     }
   }
 }
+
+// Make the handler explicitly available to the page and add a direct button listener.
+// This keeps the existing onclick as a fallback while ensuring the button always calls
+// the password-change handler in browsers that handle inline handlers differently.
+window.changeAdminPassword = changeAdminPassword;
+
 async function resetAdminPassword(){
   var next=document.getElementById("ownerNewAdminPw").value;
   var n=document.getElementById("passwordNotice");
@@ -2867,7 +2885,7 @@ button{
         <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
         <button type="button" class="password-eye" onclick="togglePassword('confirmAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
-      <button id="changeAdminPasswordBtn" type="button" class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
+      <button id="changeAdminPasswordBtn" type="button" class="save" style="background:#6f42c1">CHANGE PASSWORD</button>
     `}
     <div id="passwordNotice" class="notice"></div>
   </div>
@@ -3935,24 +3953,6 @@ async function toggleLiveControl(){
     );
   }
 }
-function togglePassword(id, button){
-
-  var input = document.getElementById(id);
-  if(!input){
-    return;
-  }
-
-  if(input.type === "password"){
-    input.type = "text";
-    button.textContent = "🙈";
-    button.setAttribute("aria-label", "Hide password");
-  }else{
-    input.type = "password";
-    button.textContent = "👁";
-    button.setAttribute("aria-label", "Show password");
-  }
-}
-
 // ======================================
 // INITIAL
 // ======================================
@@ -3964,6 +3964,14 @@ async function startAdmin(){
   await loadAdminList();
 
   await loadOldHistoryValues();
+
+  var changeBtn = document.getElementById("changeAdminPasswordBtn");
+  if (changeBtn && changeBtn.dataset.passwordBound !== "1") {
+    changeBtn.dataset.passwordBound = "1";
+    changeBtn.addEventListener("click", function () {
+      window.changeAdminPassword();
+    });
+  }
 
 }
 

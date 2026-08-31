@@ -179,34 +179,35 @@ export default {
       // PASSWORD MANAGEMENT
       // =========================
       if (path === "/api/admin/change-password" && request.method === "POST") {
-        const role = await getSessionRole(request, env);
-        if (role !== "admin") return json({ok:false,error:"Admin only"}, 403);
-
-        const body = await request.json();
-        const current = String(body.current_password ?? "");
-        const next = String(body.new_password ?? "");
-
-        if (!current) return json({ok:false,error:"Current Password ထည့်ပါ"}, 400);
-        if (!next) return json({ok:false,error:"New Password ထည့်ပါ"}, 400);
-        if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
-        if (next !== String(body.confirm_password ?? next)) {
-          return json({ok:false,error:"New Password နှစ်ခု မတူပါ"}, 400);
-        }
-
-        if (!(await verifyAdminPassword(env, current))) {
-          return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
-        }
-
         try {
-          await setAdminPassword(env, next);
-        } catch (e) {
-          return json({ok:false,error:"Password သိမ်းလို့ မရပါ။ Database ကို စစ်ဆေးပါ"}, 500);
-        }
+          const role = await getSessionRole(request, env);
+          if (role !== "admin") return json({ok:false,error:"Admin session မရှိပါ။ Login ပြန်ဝင်ပါ"}, 403);
 
-        return json({
-          ok:true,
-          message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ"
-        });
+          const body = await request.json();
+          const current = String(body.current_password ?? "");
+          const next = String(body.new_password ?? "");
+          const confirm = String(body.confirm_password ?? "");
+
+          if (!current) return json({ok:false,error:"လက်ရှိ Password ထည့်ပါ"}, 400);
+          if (!next) return json({ok:false,error:"Password အသစ် ထည့်ပါ"}, 400);
+          if (next.length < 6) return json({ok:false,error:"Password အနည်းဆုံး 6 လုံးထားပါ"}, 400);
+          if (next !== confirm) return json({ok:false,error:"Password အသစ် နှစ်ခု မတူပါ"}, 400);
+          if (current === next) return json({ok:false,error:"Password အသစ်က လက်ရှိ Password နဲ့ မတူရပါ"}, 400);
+
+          if (!(await verifyAdminPassword(env, current))) {
+            return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
+          }
+
+          await setAdminPassword(env, next);
+
+          return json({
+            ok:true,
+            message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ"
+          });
+        } catch (e) {
+          console.error("ADMIN PASSWORD CHANGE ERROR", e);
+          return json({ok:false,error:"Password ပြောင်းလို့ မရပါ။ Cloudflare D1 Database ကို စစ်ဆေးပါ"}, 500);
+        }
       }
 
       if (path === "/api/owner/reset-admin-password" && request.method === "POST") {
@@ -2012,62 +2013,40 @@ async function changeAdminPassword(){
   var nextEl=document.getElementById("newAdminPw");
   var confirmEl=document.getElementById("confirmAdminPw");
   var n=document.getElementById("passwordNotice");
-  var btn=document.querySelector('button[onclick="changeAdminPassword()"]');
+  var btn=document.getElementById("changeAdminPasswordBtn");
+  if(!currentEl || !nextEl || !confirmEl || !n){ return; }
 
-  function showNotice(message, ok){
-    if(!n) return;
-    n.textContent=message;
-    n.className="notice " + (ok ? "ok" : "bad");
-  }
+  var current=currentEl.value;
+  var next=nextEl.value;
+  var confirm=confirmEl.value;
 
-  var current=currentEl ? currentEl.value : "";
-  var next=nextEl ? nextEl.value : "";
-  var confirm=confirmEl ? confirmEl.value : "";
+  n.textContent="";
+  if(!current){ n.textContent="လက်ရှိ Password ထည့်ပါ"; currentEl.focus(); return; }
+  if(!next){ n.textContent="Password အသစ် ထည့်ပါ"; nextEl.focus(); return; }
+  if(next.length < 6){ n.textContent="Password အနည်းဆုံး 6 လုံးထားပါ"; nextEl.focus(); return; }
+  if(next!==confirm){ n.textContent="Password အသစ် နှစ်ခု မတူပါ"; confirmEl.focus(); return; }
+  if(current===next){ n.textContent="Password အသစ်က လက်ရှိ Password နဲ့ မတူရပါ"; nextEl.focus(); return; }
 
-  if(!current){ showNotice("လက်ရှိ Password ထည့်ပါ", false); return; }
-  if(!next){ showNotice("Password အသစ် ထည့်ပါ", false); return; }
-  if(next.length < 6){ showNotice("Password အနည်းဆုံး 6 လုံးထားပါ", false); return; }
-  if(next!==confirm){ showNotice("Password အသစ် နှစ်ခု မတူပါ", false); return; }
-
+  if(btn){ btn.disabled=true; btn.textContent="PASSWORD ပြောင်းနေပါတယ်..."; }
   try {
-    if(btn){
-      btn.disabled=true;
-      btn.textContent="ပြောင်းနေပါတယ်...";
-    }
-
     var r=await fetch("/api/admin/change-password",{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
-      credentials:"same-origin",
-      body:JSON.stringify({
-        current_password:current,
-        new_password:next,
-        confirm_password:confirm
-      })
+      headers:{"Content-Type":"application/json","Accept":"application/json"},
+      credentials:"include",
+      cache:"no-store",
+      body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})
     });
-
+    var text=await r.text();
     var d;
-    try {
-      d=await r.json();
-    } catch(e) {
-      d={ok:false,error:"Server မှ တုံ့ပြန်မှု မမှန်ပါ"};
-    }
-
-    if(d.ok){
-      showNotice("Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ", true);
-      if(currentEl) currentEl.value="";
-      if(nextEl) nextEl.value="";
-      if(confirmEl) confirmEl.value="";
-    }else{
-      showNotice(d.error || "Password ပြောင်းလို့ မရပါ", false);
-    }
+    try { d=JSON.parse(text); } catch(e) { d={ok:false,error:"Server က မှန်ကန်တဲ့ response မပေးပါ"}; }
+    n.textContent=d.ok ? "Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ" : (d.error || "Password ပြောင်းလို့ မရပါ");
+    n.className="notice "+(d.ok ? "ok" : "bad");
+    if(d.ok){ currentEl.value=""; nextEl.value=""; confirmEl.value=""; }
   } catch(e) {
-    showNotice("Password ပြောင်းရာတွင် အမှားဖြစ်နေပါတယ်", false);
+    n.className="notice bad";
+    n.textContent="Password ပြောင်းရာတွင် အမှားဖြစ်နေပါတယ်";
   } finally {
-    if(btn){
-      btn.disabled=false;
-      btn.textContent="CHANGE PASSWORD";
-    }
+    if(btn){ btn.disabled=false; btn.textContent="CHANGE PASSWORD"; }
   }
 }
 async function resetAdminPassword(){
@@ -2792,7 +2771,7 @@ button{
         <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
         <button type="button" class="password-eye" onclick="togglePassword('confirmAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
-      <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
+      <button id="changeAdminPasswordBtn" type="button" class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}
     <div id="passwordNotice" class="notice"></div>
   </div>

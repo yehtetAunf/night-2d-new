@@ -1484,10 +1484,46 @@ async function passwordHash(password, saltHex) {
 
 async function setAdminPassword(env, password) {
   await ensureSettingsTable(env);
+
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
-  const salt = Array.from(saltBytes).map(b=>b.toString(16).padStart(2,"0")).join("");
+  const salt = Array.from(saltBytes)
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+
   const hash = await passwordHash(password, salt);
-  await env.DB.prepare(`INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value`).bind(ADMIN_HASH_KEY, salt + ":" + hash).run();
+  const value = salt + ":" + hash;
+
+  // D1-safe update: update the existing row first, otherwise insert it.
+  // This avoids relying on an UPSERT for password changes.
+  const existing = await env.DB.prepare(`
+    SELECT setting_key
+    FROM settings
+    WHERE setting_key = ?
+  `).bind(ADMIN_HASH_KEY).first();
+
+  if (existing) {
+    await env.DB.prepare(`
+      UPDATE settings
+      SET setting_value = ?
+      WHERE setting_key = ?
+    `).bind(value, ADMIN_HASH_KEY).run();
+  } else {
+    await env.DB.prepare(`
+      INSERT INTO settings (setting_key, setting_value)
+      VALUES (?, ?)
+    `).bind(ADMIN_HASH_KEY, value).run();
+  }
+
+  // Confirm that the new password can be verified immediately.
+  const saved = await env.DB.prepare(`
+    SELECT setting_value
+    FROM settings
+    WHERE setting_key = ?
+  `).bind(ADMIN_HASH_KEY).first();
+
+  if (!saved || saved.setting_value !== value) {
+    throw new Error("Admin password update verification failed");
+  }
 }
 
 async function verifyAdminPassword(env, password) {

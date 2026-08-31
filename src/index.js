@@ -2008,17 +2008,33 @@ function togglePassword(id, button){
 }
 
 async function changeAdminPassword(){
-  var current=document.getElementById("currentAdminPw").value;
-  var next=document.getElementById("newAdminPw").value;
-  var confirm=document.getElementById("confirmAdminPw").value;
+  var currentEl=document.getElementById("currentAdminPw");
+  var nextEl=document.getElementById("newAdminPw");
+  var confirmEl=document.getElementById("confirmAdminPw");
   var n=document.getElementById("passwordNotice");
+  var btn=document.querySelector('button[onclick="changeAdminPassword()"]');
 
-  if(!current){ n.textContent="လက်ရှိ Password ထည့်ပါ"; return; }
-  if(!next){ n.textContent="Password အသစ် ထည့်ပါ"; return; }
-  if(next.length < 6){ n.textContent="Password အနည်းဆုံး 6 လုံးထားပါ"; return; }
-  if(next!==confirm){ n.textContent="Password အသစ် နှစ်ခု မတူပါ"; return; }
+  function showNotice(message, ok){
+    if(!n) return;
+    n.textContent=message;
+    n.className="notice " + (ok ? "ok" : "bad");
+  }
+
+  var current=currentEl ? currentEl.value : "";
+  var next=nextEl ? nextEl.value : "";
+  var confirm=confirmEl ? confirmEl.value : "";
+
+  if(!current){ showNotice("လက်ရှိ Password ထည့်ပါ", false); return; }
+  if(!next){ showNotice("Password အသစ် ထည့်ပါ", false); return; }
+  if(next.length < 6){ showNotice("Password အနည်းဆုံး 6 လုံးထားပါ", false); return; }
+  if(next!==confirm){ showNotice("Password အသစ် နှစ်ခု မတူပါ", false); return; }
 
   try {
+    if(btn){
+      btn.disabled=true;
+      btn.textContent="ပြောင်းနေပါတယ်...";
+    }
+
     var r=await fetch("/api/admin/change-password",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -2030,18 +2046,28 @@ async function changeAdminPassword(){
       })
     });
 
-    var d=await r.json();
-    n.textContent=d.ok
-      ? "Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ"
-      : (d.error || "Password ပြောင်းလို့ မရပါ");
+    var d;
+    try {
+      d=await r.json();
+    } catch(e) {
+      d={ok:false,error:"Server မှ တုံ့ပြန်မှု မမှန်ပါ"};
+    }
 
     if(d.ok){
-      document.getElementById("currentAdminPw").value="";
-      document.getElementById("newAdminPw").value="";
-      document.getElementById("confirmAdminPw").value="";
+      showNotice("Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ", true);
+      if(currentEl) currentEl.value="";
+      if(nextEl) nextEl.value="";
+      if(confirmEl) confirmEl.value="";
+    }else{
+      showNotice(d.error || "Password ပြောင်းလို့ မရပါ", false);
     }
   } catch(e) {
-    n.textContent="Password ပြောင်းရာတွင် အမှားဖြစ်နေပါတယ်";
+    showNotice("Password ပြောင်းရာတွင် အမှားဖြစ်နေပါတယ်", false);
+  } finally {
+    if(btn){
+      btn.disabled=false;
+      btn.textContent="CHANGE PASSWORD";
+    }
   }
 }
 async function resetAdminPassword(){

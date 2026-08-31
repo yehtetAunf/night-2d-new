@@ -194,11 +194,19 @@ export default {
         }
 
         if (!(await verifyAdminPassword(env, current))) {
-          return json({ok:false,error:"Current password မှားနေပါတယ်"}, 400);
+          return json({ok:false,error:"လက်ရှိ Password မှားနေပါတယ်"}, 400);
         }
 
-        await setAdminPassword(env, next);
-        return json({ok:true,message:"Admin Password ပြောင်းပြီးပါပြီ"});
+        try {
+          await setAdminPassword(env, next);
+        } catch (e) {
+          return json({ok:false,error:"Password သိမ်းလို့ မရပါ။ Database ကို စစ်ဆေးပါ"}, 500);
+        }
+
+        return json({
+          ok:true,
+          message:"Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ"
+        });
       }
 
       if (path === "/api/owner/reset-admin-password" && request.method === "POST") {
@@ -1452,11 +1460,33 @@ async function setAdminPassword(env, password) {
 
 async function verifyAdminPassword(env, password) {
   await ensureSettingsTable(env);
-  const row = await env.DB.prepare(`SELECT setting_value FROM settings WHERE setting_key = ?`).bind(ADMIN_HASH_KEY).first();
-  if (!row) return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+
+  const row = await env.DB.prepare(
+    `SELECT setting_value FROM settings WHERE setting_key = ?`
+  ).bind(ADMIN_HASH_KEY).first();
+
+  // If no DB password has been saved yet, use the configured ADMIN_PASSWORD.
+  if (!row || !row.setting_value) {
+    return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+  }
+
   const parts = String(row.setting_value).split(":");
-  if (parts.length !== 2) return false;
-  return (await passwordHash(password, parts[0])) === parts[1];
+
+  // If an old/invalid DB value exists, still allow the configured
+  // ADMIN_PASSWORD so the password can be repaired from Admin Settings.
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return !!env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD;
+  }
+
+  const hashedMatch = (await passwordHash(password, parts[0])) === parts[1];
+
+  // Allow the current Wrangler/GitHub ADMIN_PASSWORD as a safe fallback
+  // for an existing deployment whose DB password record is stale.
+  if (!hashedMatch && env.ADMIN_PASSWORD && password === env.ADMIN_PASSWORD) {
+    return true;
+  }
+
+  return hashedMatch;
 }
 
 
@@ -1982,10 +2012,37 @@ async function changeAdminPassword(){
   var next=document.getElementById("newAdminPw").value;
   var confirm=document.getElementById("confirmAdminPw").value;
   var n=document.getElementById("passwordNotice");
-  if(next!==confirm){ n.textContent="New Password နှစ်ခု မတူပါ"; return; }
-  var r=await fetch("/api/admin/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:current,new_password:next,confirm_password:confirm})});
-  var d=await r.json(); n.textContent=d.ok?"Admin Password ပြောင်းပြီးပါပြီ":(d.error||"Error");
-  if(d.ok){ document.getElementById("currentAdminPw").value="";document.getElementById("newAdminPw").value="";document.getElementById("confirmAdminPw").value=""; }
+
+  if(!current){ n.textContent="လက်ရှိ Password ထည့်ပါ"; return; }
+  if(!next){ n.textContent="Password အသစ် ထည့်ပါ"; return; }
+  if(next.length < 6){ n.textContent="Password အနည်းဆုံး 6 လုံးထားပါ"; return; }
+  if(next!==confirm){ n.textContent="Password အသစ် နှစ်ခု မတူပါ"; return; }
+
+  try {
+    var r=await fetch("/api/admin/change-password",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      credentials:"same-origin",
+      body:JSON.stringify({
+        current_password:current,
+        new_password:next,
+        confirm_password:confirm
+      })
+    });
+
+    var d=await r.json();
+    n.textContent=d.ok
+      ? "Password အသစ်ကို အောင်မြင်စွာ ပြောင်းပြီးပါပြီ"
+      : (d.error || "Password ပြောင်းလို့ မရပါ");
+
+    if(d.ok){
+      document.getElementById("currentAdminPw").value="";
+      document.getElementById("newAdminPw").value="";
+      document.getElementById("confirmAdminPw").value="";
+    }
+  } catch(e) {
+    n.textContent="Password ပြောင်းရာတွင် အမှားဖြစ်နေပါတယ်";
+  }
 }
 async function resetAdminPassword(){
   var next=document.getElementById("ownerNewAdminPw").value;

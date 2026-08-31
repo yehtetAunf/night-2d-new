@@ -1944,17 +1944,12 @@ const ROUNDS =
 ${JSON.stringify(ROUNDS)};
 
 function togglePassword(id, button){
-  var input=document.getElementById(id);
+  const input=document.getElementById(id);
   if(!input) return;
-  if(input.type === "password"){
-    input.type = "text";
-    button.textContent = "🙈";
-    button.setAttribute("aria-label", "Hide password");
-  }else{
-    input.type = "password";
-    button.textContent = "👁️";
-    button.setAttribute("aria-label", "Show password");
-  }
+  const showing=input.type==='text';
+  input.type=showing?'password':'text';
+  button.textContent=showing?'👁':'🙈';
+  button.setAttribute('aria-label', showing?'Show password':'Hide password');
 }
 
 async function changeAdminPassword(){
@@ -2308,42 +2303,6 @@ input{
   font-size:18px;
 }
 
-/* Password Show / Hide */
-.password-wrap{
-  position:relative;
-  width:100%;
-  margin-top:9px;
-}
-.password-wrap input{
-  width:100%;
-  margin-top:0;
-  padding-right:58px;
-  box-sizing:border-box;
-}
-.password-toggle{
-  position:absolute !important;
-  right:6px !important;
-  top:50% !important;
-  transform:translateY(-50%) !important;
-  width:42px !important;
-  height:42px !important;
-  min-width:42px !important;
-  margin:0 !important;
-  padding:0 !important;
-  border:0 !important;
-  border-radius:10px !important;
-  background:transparent !important;
-  color:#53616d !important;
-  font-size:21px !important;
-  line-height:42px !important;
-  cursor:pointer;
-  z-index:5;
-}
-.password-toggle:hover{
-  background:#eef2f5 !important;
-}
-
-
 button{
   width:100%;
   margin-top:18px;
@@ -2379,7 +2338,7 @@ button{
         Owner / Admin Password
       </label>
 
-      <div class="password-wrap">
+      <div class="password-field login-password-field">
         <input
           id="loginPassword"
           type="password"
@@ -2387,7 +2346,7 @@ button{
           placeholder="Password"
           required
         >
-        <button type="button" class="password-toggle" onclick="togglePassword('loginPassword', this)" aria-label="Show password" title="Show / Hide Password">👁️</button>
+        <button type="button" class="password-eye" onclick="togglePassword('loginPassword', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
 
       <button type="submit">
@@ -2488,6 +2447,38 @@ select{
   border-radius:12px;
   background:#fff;
   font-size:17px;
+}
+
+/* Password fields: keep the eye INSIDE the input on the right */
+.password-field{
+  position:relative;
+  width:100%;
+}
+.password-field input{
+  width:100%;
+  padding-right:54px;
+}
+.password-eye{
+  position:absolute;
+  right:8px;
+  top:50%;
+  transform:translateY(-50%);
+  width:40px;
+  height:40px;
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:#53616d;
+  font-size:21px;
+  line-height:40px;
+  text-align:center;
+  cursor:pointer;
+  z-index:2;
+}
+.password-eye:hover{
+  background:#eef2f5;
 }
 
 .auto-result{
@@ -2672,26 +2663,26 @@ button{
     <p class="small">Logged in as: <b>${role.toUpperCase()}</b></p>
     ${role === "owner" ? `
       <label>Reset Admin Password</label>
-      <div class="password-wrap">
+      <div class="password-field">
         <input id="ownerNewAdminPw" type="password" placeholder="New Admin Password">
-        <button type="button" class="password-toggle" onclick="togglePassword('ownerNewAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁️</button>
+        <button type="button" class="password-eye" onclick="togglePassword('ownerNewAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="resetAdminPassword()">RESET ADMIN PASSWORD</button>
     ` : `
       <label>Current Admin Password</label>
-      <div class="password-wrap">
+      <div class="password-field">
         <input id="currentAdminPw" type="password" placeholder="Current Password">
-        <button type="button" class="password-toggle" onclick="togglePassword('currentAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁️</button>
+        <button type="button" class="password-eye" onclick="togglePassword('currentAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>New Admin Password</label>
-      <div class="password-wrap">
+      <div class="password-field">
         <input id="newAdminPw" type="password" placeholder="New Password">
-        <button type="button" class="password-toggle" onclick="togglePassword('newAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁️</button>
+        <button type="button" class="password-eye" onclick="togglePassword('newAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>Confirm New Password</label>
-      <div class="password-wrap">
+      <div class="password-field">
         <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
-        <button type="button" class="password-toggle" onclick="togglePassword('confirmAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁️</button>
+        <button type="button" class="password-eye" onclick="togglePassword('confirmAdminPw', this)" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}

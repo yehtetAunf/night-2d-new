@@ -3752,6 +3752,24 @@ async function toggleLiveControl(){
     );
   }
 }
+function togglePassword(id, button){
+
+  var input = document.getElementById(id);
+  if(!input){
+    return;
+  }
+
+  if(input.type === "password"){
+    input.type = "text";
+    button.textContent = "🙈";
+    button.setAttribute("aria-label", "Hide password");
+  }else{
+    input.type = "password";
+    button.textContent = "👁";
+    button.setAttribute("aria-label", "Show password");
+  }
+}
+
 // ======================================
 // INITIAL
 // ======================================

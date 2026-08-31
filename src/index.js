@@ -1475,11 +1475,20 @@ async function getSessionRole(request, env) {
   return bits[0];
 }
 
-async function passwordHash(password, saltHex) {
+// Password hashing for Cloudflare Workers.
+// 10,000 PBKDF2 rounds keeps the operation safely within the Worker CPU budget.
+// The verifier also understands the old 120,000-round format so an existing
+// password record remains usable.
+async function passwordHash(password, saltHex, iterations = 10000) {
   const cleanSalt = String(saltHex || "").trim();
 
   if (!/^[0-9a-fA-F]{32}$/.test(cleanSalt)) {
     throw new Error("Invalid password salt");
+  }
+
+  const rounds = Number(iterations);
+  if (!Number.isInteger(rounds) || rounds < 1) {
+    throw new Error("Invalid password iterations");
   }
 
   const salt = new Uint8Array(
@@ -1500,7 +1509,7 @@ async function passwordHash(password, saltHex) {
     {
       name: "PBKDF2",
       salt: salt,
-      iterations: 120000,
+      iterations: rounds,
       hash: "SHA-256"
     },
     key,
@@ -1532,27 +1541,27 @@ async function setAdminPassword(env, password) {
     })
     .join("");
 
+  // Use a Worker-safe cost for newly created passwords.
+  const iterations = 10000;
   const hash = await passwordHash(
     passwordText,
-    salt
+    salt,
+    iterations
   );
 
-  const value = salt + ":" + hash;
+  // Format: salt:iterations:hash
+  const value = salt + ":" + iterations + ":" + hash;
 
-  // D1-safe write: replace only the password setting row.
-  // setting_key is the PRIMARY KEY in the existing D1 settings table.
+  // Update only the password setting row; do not touch any other settings.
   await env.DB.prepare(`
-    INSERT OR REPLACE INTO settings
-      (setting_key, setting_value)
+    INSERT INTO settings (setting_key, setting_value)
     VALUES (?, ?)
+    ON CONFLICT(setting_key)
+    DO UPDATE SET setting_value = excluded.setting_value
   `)
-    .bind(
-      ADMIN_HASH_KEY,
-      value
-    )
+    .bind(ADMIN_HASH_KEY, value)
     .run();
 
-  // Read the value back before reporting success.
   const saved = await env.DB.prepare(`
     SELECT setting_value
     FROM settings
@@ -1562,22 +1571,7 @@ async function setAdminPassword(env, password) {
     .first();
 
   if (!saved || String(saved.setting_value) !== value) {
-    throw new Error(
-      "Admin password was not saved to D1"
-    );
-  }
-
-  // Verify the just-written hash immediately.
-  const verified =
-    await passwordHash(
-      passwordText,
-      salt
-    ) === hash;
-
-  if (!verified) {
-    throw new Error(
-      "Admin password verification failed"
-    );
+    throw new Error("Admin password was not saved to D1");
   }
 }
 
@@ -1592,40 +1586,50 @@ async function verifyAdminPassword(env, password) {
     .bind(ADMIN_HASH_KEY)
     .first();
 
-  // First-time / repair fallback.
+  // First-time / recovery fallback.
   if (!row || !row.setting_value) {
     return !!env.ADMIN_PASSWORD &&
       password === env.ADMIN_PASSWORD;
   }
 
-  const parts =
-    String(row.setting_value).split(":");
+  const parts = String(row.setting_value).split(":");
 
+  let salt = "";
+  let iterations = 10000;
+  let storedHash = "";
+
+  // New format: salt:iterations:hash
   if (
-    parts.length !== 2 ||
-    !/^[0-9a-fA-F]{32}$/.test(parts[0]) ||
-    !/^[0-9a-fA-F]{64}$/.test(parts[1])
+    parts.length === 3 &&
+    /^[0-9a-fA-F]{32}$/.test(parts[0]) &&
+    /^\d+$/.test(parts[1]) &&
+    /^[0-9a-fA-F]{64}$/.test(parts[2])
   ) {
-    return !!env.ADMIN_PASSWORD &&
-      password === env.ADMIN_PASSWORD;
+    salt = parts[0];
+    iterations = Number(parts[1]);
+    storedHash = parts[2];
+  }
+  // Old format: salt:hash (120,000 rounds)
+  else if (
+    parts.length === 2 &&
+    /^[0-9a-fA-F]{32}$/.test(parts[0]) &&
+    /^[0-9a-fA-F]{64}$/.test(parts[1])
+  ) {
+    salt = parts[0];
+    iterations = 120000;
+    storedHash = parts[1];
   }
 
-  const hashedMatch =
-    await passwordHash(
-      password,
-      parts[0]
-    ) === parts[1];
+  if (salt && storedHash) {
+    const hashedMatch =
+      await passwordHash(password, salt, iterations) === storedHash;
+
+    if (hashedMatch) return true;
+  }
 
   // Keep the deployment secret as a recovery fallback.
-  if (
-    !hashedMatch &&
-    env.ADMIN_PASSWORD &&
-    password === env.ADMIN_PASSWORD
-  ) {
-    return true;
-  }
-
-  return hashedMatch;
+  return !!env.ADMIN_PASSWORD &&
+    password === env.ADMIN_PASSWORD;
 }
 
 // ==================================================

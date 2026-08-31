@@ -1946,14 +1946,14 @@ ${JSON.stringify(ROUNDS)};
 function togglePassword(id, button){
   var input=document.getElementById(id);
   if(!input) return;
-  if(input.type==="password"){
-    input.type="text";
-    button.textContent="🙈";
-    button.setAttribute("aria-label","Hide password");
+  if(input.type === "password"){
+    input.type = "text";
+    button.textContent = "🙈";
+    button.setAttribute("aria-label", "Hide password");
   }else{
-    input.type="password";
-    button.textContent="👁️";
-    button.setAttribute("aria-label","Show password");
+    input.type = "password";
+    button.textContent = "👁️";
+    button.setAttribute("aria-label", "Show password");
   }
 }
 
@@ -2307,32 +2307,40 @@ input{
   border-radius:12px;
   font-size:18px;
 }
+
+/* Password Show / Hide */
 .password-wrap{
   position:relative;
   width:100%;
+  margin-top:9px;
 }
 .password-wrap input{
+  width:100%;
+  margin-top:0;
   padding-right:58px;
+  box-sizing:border-box;
 }
 .password-toggle{
-  position:absolute;
-  right:8px;
-  top:50%;
-  transform:translateY(-50%);
-  width:44px;
-  height:44px;
-  margin:0;
-  padding:0;
-  border:0;
-  border-radius:10px;
-  background:transparent;
-  color:#53616d;
-  font-size:22px;
-  line-height:44px;
+  position:absolute !important;
+  right:6px !important;
+  top:50% !important;
+  transform:translateY(-50%) !important;
+  width:42px !important;
+  height:42px !important;
+  min-width:42px !important;
+  margin:0 !important;
+  padding:0 !important;
+  border:0 !important;
+  border-radius:10px !important;
+  background:transparent !important;
+  color:#53616d !important;
+  font-size:21px !important;
+  line-height:42px !important;
   cursor:pointer;
+  z-index:5;
 }
 .password-toggle:hover{
-  background:#eef2f5;
+  background:#eef2f5 !important;
 }
 
 
@@ -2379,13 +2387,7 @@ button{
           placeholder="Password"
           required
         >
-        <button
-          type="button"
-          class="password-toggle"
-          onclick="togglePassword('loginPassword', this)"
-          aria-label="Show password"
-          title="Show / Hide Password"
-        >👁️</button>
+        <button type="button" class="password-toggle" onclick="togglePassword('loginPassword', this)" aria-label="Show password" title="Show / Hide Password">👁️</button>
       </div>
 
       <button type="submit">

@@ -1539,16 +1539,12 @@ async function setAdminPassword(env, password) {
 
   const value = salt + ":" + hash;
 
-  // D1-safe single statement. The setting_key is PRIMARY KEY/UNIQUE.
-  // This creates the password row if it does not exist and updates it
-  // if it already exists.
+  // D1-safe write: replace only the password setting row.
+  // setting_key is the PRIMARY KEY in the existing D1 settings table.
   await env.DB.prepare(`
-    INSERT INTO settings
+    INSERT OR REPLACE INTO settings
       (setting_key, setting_value)
     VALUES (?, ?)
-    ON CONFLICT(setting_key)
-    DO UPDATE SET
-      setting_value = excluded.setting_value
   `)
     .bind(
       ADMIN_HASH_KEY,

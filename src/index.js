@@ -1978,15 +1978,25 @@ ${JSON.stringify(ROUNDS)};
 
 function togglePassword(id, button){
   const input=document.getElementById(id);
-  if(!input) return false;
-  const wasFocused=(document.activeElement===input);
+  if(!input) return;
   const showing=input.type==='text';
   input.type=showing?'password':'text';
   button.textContent=showing?'👁':'🙈';
   button.setAttribute('aria-label', showing?'Show password':'Hide password');
-  if(!wasFocused) button.focus({preventScroll:true});
-  return false;
 }
+
+// Mobile-safe password eye handler. Prevent the tap from focusing/selecting the input.
+document.addEventListener('pointerdown', function(e){
+  const btn=e.target.closest && e.target.closest('.password-eye');
+  if(btn){ e.preventDefault(); e.stopPropagation(); }
+}, true);
+document.addEventListener('click', function(e){
+  const btn=e.target.closest && e.target.closest('.password-eye');
+  if(!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  togglePassword(btn.getAttribute('data-password-target'), btn);
+}, true);
 
 async function changeAdminPassword(){
   var current=document.getElementById("currentAdminPw").value.trim();
@@ -2023,15 +2033,6 @@ async function resetAdminPassword(){
   if(d.ok) document.getElementById("ownerNewAdminPw").value="";
 }
 
-
-document.addEventListener("pointerdown", function(e){
-  var btn=e.target.closest && e.target.closest(".password-eye");
-  if(!btn) return;
-  e.preventDefault();
-  e.stopPropagation();
-  var id=btn.getAttribute("data-password-target");
-  if(id) togglePassword(id, btn);
-}, true);
 
 document.addEventListener("copy", function(e){ e.preventDefault(); });
 document.addEventListener("cut", function(e){ e.preventDefault(); });
@@ -2408,7 +2409,7 @@ button{
           placeholder="Password"
           required
         >
-        <button type="button" class="password-eye" data-password-target="loginPassword" onpointerdown="event.preventDefault(); event.stopPropagation(); togglePassword('loginPassword', this); return false;" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="loginPassword" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
 
       <button type="submit">
@@ -2420,6 +2421,30 @@ button{
   </div>
 
 </div>
+
+<script>
+(function(){
+  function toggleLoginPassword(button){
+    const id=button.getAttribute('data-password-target');
+    const input=document.getElementById(id);
+    if(!input) return;
+    const show=input.type==='password';
+    input.type=show?'text':'password';
+    button.textContent=show?'🙈':'👁';
+    button.setAttribute('aria-label',show?'Hide password':'Show password');
+  }
+  document.addEventListener('pointerdown',function(e){
+    const btn=e.target.closest && e.target.closest('.password-eye');
+    if(btn){e.preventDefault();e.stopPropagation();}
+  },true);
+  document.addEventListener('click',function(e){
+    const btn=e.target.closest && e.target.closest('.password-eye');
+    if(!btn) return;
+    e.preventDefault();e.stopPropagation();
+    toggleLoginPassword(btn);
+  },true);
+})();
+</script>
 
 </body>
 </html>
@@ -2523,10 +2548,10 @@ select{
 .password-eye{
   position:absolute;
   right:8px;
-  top:0;
-  transform:none;
-  width:52px;
-  height:100%;
+  top:50%;
+  transform:translateY(-50%);
+  width:40px;
+  height:40px;
   margin:0;
   padding:0;
   border:0;
@@ -2540,6 +2565,8 @@ select{
   z-index:10;
   pointer-events:auto;
   touch-action:manipulation;
+  -webkit-user-select:none;
+  user-select:none;
   -webkit-tap-highlight-color:transparent;
 }
 .password-eye:hover{
@@ -2730,24 +2757,24 @@ button{
       <label>Reset Admin Password</label>
       <div class="password-field">
         <input id="ownerNewAdminPw" type="password" placeholder="New Admin Password">
-        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" onpointerdown="event.preventDefault(); event.stopPropagation(); togglePassword('ownerNewAdminPw', this); return false;" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="ownerNewAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="resetAdminPassword()">RESET ADMIN PASSWORD</button>
     ` : `
       <label>Current Admin Password</label>
       <div class="password-field">
         <input id="currentAdminPw" type="password" placeholder="Current Password">
-        <button type="button" class="password-eye" data-password-target="currentAdminPw" onpointerdown="event.preventDefault(); event.stopPropagation(); togglePassword('currentAdminPw', this); return false;" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="currentAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>New Admin Password</label>
       <div class="password-field">
         <input id="newAdminPw" type="password" placeholder="New Password">
-        <button type="button" class="password-eye" data-password-target="newAdminPw" onpointerdown="event.preventDefault(); event.stopPropagation(); togglePassword('newAdminPw', this); return false;" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="newAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <label>Confirm New Password</label>
       <div class="password-field">
         <input id="confirmAdminPw" type="password" placeholder="Confirm Password">
-        <button type="button" class="password-eye" data-password-target="confirmAdminPw" onpointerdown="event.preventDefault(); event.stopPropagation(); togglePassword('confirmAdminPw', this); return false;" aria-label="Show password" title="Show / Hide Password">👁</button>
+        <button type="button" class="password-eye" data-password-target="confirmAdminPw" aria-label="Show password" title="Show / Hide Password">👁</button>
       </div>
       <button class="save" style="background:#6f42c1" onclick="changeAdminPassword()">CHANGE PASSWORD</button>
     `}
